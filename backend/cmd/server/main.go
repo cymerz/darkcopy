@@ -294,6 +294,10 @@ func main() {
 	reportHandler := handler.NewReportHandler(reportSvc)
 	// Limit reports to 20 per IP per day to curb spam.
 	reportHandler.SetQuota(dailyQuota, 20)
+	// Cloudflare Turnstile captcha
+	if secret := os.Getenv("TURNSTILE_SECRET_KEY"); secret != "" {
+		reportHandler.SetTurnstileSecret(secret)
+	}
 
 	// Setup chi router.
 	r := chi.NewRouter()

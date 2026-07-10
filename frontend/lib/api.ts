@@ -360,12 +360,14 @@ export async function submitReport(data: {
   slug: string;
   reason: string;
   details: string;
+  turnstileToken: string;
 }): Promise<{ success: boolean; message: string }> {
   const body = new URLSearchParams();
   body.append('resource_type', data.resourceType);
   body.append('slug', data.slug);
   body.append('reason', data.reason);
   body.append('details', data.details);
+  body.append('turnstile_token', data.turnstileToken);
   return apiFetch<{ success: boolean; message: string }>('/report', {
     method: 'POST',
     body,

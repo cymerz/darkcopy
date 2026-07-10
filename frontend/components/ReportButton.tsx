@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { Turnstile } from '@marsidev/react-turnstile';
 import { submitReport } from '@/lib/api';
 import { APIError, REPORT_REASONS } from '@/lib/types';
 import type { ReportResourceType } from '@/lib/types';
@@ -15,23 +17,31 @@ type SubmitState = 'idle' | 'submitting' | 'done' | 'error';
 
 export function ReportButton({ resourceType, slug, compact }: ReportButtonProps) {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [reason, setReason] = useState(REPORT_REASONS[0].value);
   const [details, setDetails] = useState('');
   const [state, setState] = useState<SubmitState>('idle');
   const [message, setMessage] = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const captchaPassed = turnstileToken !== null;
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const close = () => {
     if (state === 'submitting') return;
     setOpen(false);
-    setTimeout(() => { setReason(REPORT_REASONS[0].value); setDetails(''); setState('idle'); setMessage(null); }, 150);
+    setTimeout(() => { setReason(REPORT_REASONS[0].value); setDetails(''); setState('idle'); setMessage(null); setTurnstileToken(null); }, 150);
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (state === 'submitting') return;
+    if (!captchaPassed) return;
     setState('submitting'); setMessage(null);
     try {
-      const res = await submitReport({ resourceType, slug, reason, details });
+      const res = await submitReport({ resourceType, slug, reason, details, turnstileToken: turnstileToken! });
       setState('done'); setMessage(res.message || 'Report submitted. Thank you.');
     } catch (err) {
       setState('error');
@@ -50,10 +60,10 @@ export function ReportButton({ resourceType, slug, compact }: ReportButtonProps)
         REPORT
       </button>
 
-      {open && (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4"
+      {open && mounted && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4 isolate"
           role="dialog" aria-modal="true" aria-labelledby="report-title" onClick={close}>
-          <div className="w-full sm:max-w-md border-2 border-surface-variant bg-surface-container-lowest p-5 sm:p-6 shadow-2xl"
+          <div className="w-full sm:max-w-md border-2 border-surface-variant bg-surface-container-lowest p-5 sm:p-6 shadow-2xl isolate"
             onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2 px-3 py-2 bg-surface-container-low border-b-2 border-surface-variant -mx-5 -mt-5 mb-4 sm:-mx-6 sm:-mt-6">
               <div className="flex items-center gap-1.5" aria-hidden="true">
@@ -96,11 +106,19 @@ export function ReportButton({ resourceType, slug, compact }: ReportButtonProps)
 
                 {state === 'error' && message && <div role="alert" className="border-2 border-danger-red bg-error-container/20 px-4 py-3"><p className="text-sm font-mono text-error">⚠ ERROR: {message}</p></div>}
 
+                <div className="flex justify-center isolate">
+                  <Turnstile
+                    siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? ''}
+                    onSuccess={(t) => setTurnstileToken(t)}
+                    options={{ theme: 'dark' }}
+                  />
+                </div>
+
                 <div className="flex flex-col-reverse sm:flex-row gap-2.5 pt-2">
                   <button type="button" onClick={close} disabled={state === 'submitting'}
                     className="inline-flex min-h-[44px] w-full sm:flex-1 items-center justify-center border-2 border-surface-variant text-on-surface-variant px-4 py-2.5 font-mono text-sm uppercase tracking-wider transition-all hover:border-secondary hover:text-secondary disabled:opacity-60">
                     [ CANCEL ]</button>
-                  <button type="submit" disabled={state === 'submitting'}
+                  <button type="submit" disabled={state === 'submitting' || !captchaPassed}
                     className="inline-flex min-h-[44px] w-full sm:flex-1 items-center justify-center border-2 border-danger-red text-danger-red px-4 py-2.5 font-mono text-sm uppercase tracking-wider transition-all hover:bg-danger-red hover:text-white disabled:opacity-60">
                     {state === 'submitting' ? 'SENDING...' : '> SUBMIT REPORT'}
                   </button>
@@ -108,7 +126,8 @@ export function ReportButton({ resourceType, slug, compact }: ReportButtonProps)
               </form>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
