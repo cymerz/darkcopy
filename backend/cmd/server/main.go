@@ -302,6 +302,11 @@ func main() {
 	r.Use(middleware.Recoverer)
 
 	// Register routes.
+	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	})
 	handler.RegisterPasteRoutes(r, pasteHandler)
 	handler.RegisterFileRoutes(r, fileHandler)
 	handler.RegisterReportRoutes(r, reportHandler)
