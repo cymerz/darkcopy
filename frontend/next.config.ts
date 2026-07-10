@@ -17,6 +17,8 @@ const csp = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
+  output: "standalone",
+
   // Raise the body size limit for the /api/upload rewrite proxy to match
   // the backend's 100 MB file size limit (Requirement 5.9).
   experimental: {
