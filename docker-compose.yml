@@ -44,6 +44,7 @@ services:
       CLEANUP_INTERVAL: ${CLEANUP_INTERVAL:-5m}
       ADMIN_TOKEN: ${ADMIN_TOKEN:-example_admin_token_change_me}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
       # S3 Configurations (optional)
       S3_BUCKET: ${S3_BUCKET:-}
       S3_REGION: ${S3_REGION:-us-east-1}
@@ -58,6 +59,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
     container_name: darkcopy-frontend
     restart: unless-stopped
     ports:
