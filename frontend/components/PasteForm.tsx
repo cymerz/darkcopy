@@ -21,7 +21,7 @@ const VISIBILITY_OPTIONS: { value: Visibility; label: string }[] = [
 ];
 
 const FIELD_CLASS =
-  'w-full min-h-[44px] border-2 border-surface-variant bg-surface-container-lowest px-3 py-2.5 ' +
+  'w-full max-w-full min-h-[44px] border-2 border-surface-variant bg-surface-container-lowest px-3 py-2.5 ' +
   'text-on-surface placeholder-on-surface-variant font-mono text-sm transition-colors ' +
   'focus:border-secondary focus:outline-none focus:shadow-[0_0_10px_rgba(76,215,246,0.2)] disabled:cursor-not-allowed disabled:opacity-60';
 
@@ -137,9 +137,9 @@ export function PasteForm({ languages, expiryOptions, disabled }: PasteFormProps
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-6 md:grid-cols-2 w-full">
         {/* Title */}
-        <div className="space-y-2">
+        <div className="space-y-2 min-w-0">
           <label htmlFor="title" className="text-label-caps text-secondary">PASTE_TITLE</label>
           <input type="text" id="title" name="title" value={title}
             onChange={(e) => setTitle(e.target.value)} placeholder="untitled" disabled={isFormDisabled}
@@ -147,7 +147,7 @@ export function PasteForm({ languages, expiryOptions, disabled }: PasteFormProps
         </div>
 
         {/* Language */}
-        <div className="space-y-2">
+        <div className="space-y-2 min-w-0">
           <label htmlFor="language" className="text-label-caps text-secondary">LANGUAGE_SPEC</label>
           <select id="language" name="language" value={language}
             onChange={(e) => setLanguage(e.target.value)} disabled={isFormDisabled}
@@ -159,22 +159,22 @@ export function PasteForm({ languages, expiryOptions, disabled }: PasteFormProps
         </div>
 
         {/* Custom slug */}
-        <div className="space-y-2">
+        <div className="space-y-2 min-w-0">
           <label htmlFor="custom_slug" className="text-label-caps text-secondary">CUSTOM_SLUG</label>
-          <div className="flex items-center border-2 border-surface-variant bg-surface-container-lowest transition-colors focus-within:border-secondary focus-within:shadow-[0_0_10px_rgba(76,215,246,0.2)]">
+          <div className="flex items-stretch border-2 border-surface-variant bg-surface-container-lowest transition-colors focus-within:border-secondary focus-within:shadow-[0_0_10px_rgba(76,215,246,0.2)]">
             <span className="shrink-0 select-none border-r-2 border-surface-variant bg-terminal-bg px-3 py-2.5 text-sm text-outline font-mono">
               {origin}/
             </span>
             <input type="text" id="custom_slug" name="custom_slug" value={customSlug}
               onChange={(e) => setCustomSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
               placeholder="custom-slug" disabled={isFormDisabled}
-              className="min-h-[44px] flex-1 bg-transparent px-3 py-2.5 text-sm text-on-surface placeholder-on-surface-variant font-mono focus:outline-none disabled:cursor-not-allowed" />
+              className="min-h-[44px] min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm text-on-surface placeholder-on-surface-variant font-mono focus:outline-none disabled:cursor-not-allowed" />
           </div>
           <p className="text-xs text-outline font-mono">Only lowercase letters, numbers, hyphens. Leave empty for auto-slug.</p>
         </div>
 
         {/* Expiry */}
-        <div className="space-y-2">
+        <div className="space-y-2 min-w-0">
           <label htmlFor="expires_in" className="text-label-caps text-secondary">EXPIRED_IN</label>
           <select id="expires_in" name="expires_in" value={expiresIn}
             onChange={(e) => setExpiresIn(e.target.value)} disabled={isFormDisabled}

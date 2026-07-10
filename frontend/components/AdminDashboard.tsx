@@ -164,13 +164,13 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
   }, [token, onLogout, tab, reloadKey]);
 
   const handleDeletePaste = async (slug: string) => {
-    if (!window.confirm(`Hapus paste "${slug}"?`)) return;
+    if (!window.confirm(`Delete paste "${slug}"?`)) return;
     setBusySlug(slug);
     try { await deleteAdminPaste(token, slug); setPastes((p) => p.filter((x) => x.slug !== slug)); setStats((s) => s ? { ...s, total_pastes: Math.max(0, s.total_pastes - 1) } : s); } catch { setError(`Failed to delete paste "${slug}".`); } finally { setBusySlug(null); }
   };
 
   const handleDeleteFile = async (slug: string) => {
-    if (!window.confirm(`Hapus file "${slug}"?`)) return;
+    if (!window.confirm(`Delete file "${slug}"?`)) return;
     setBusySlug(slug);
     try { await deleteAdminFile(token, slug); setFiles((f) => f.filter((x) => x.slug !== slug)); setStats((s) => s ? { ...s, total_files: Math.max(0, s.total_files - 1) } : s); } catch { setError(`Failed to delete file "${slug}".`); } finally { setBusySlug(null); }
   };
@@ -182,7 +182,7 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
 
   const handleDeleteReportedContent = async (id: string, resourceType: 'paste' | 'file', slug: string) => {
     const label = resourceType === 'file' ? 'file' : 'paste';
-    if (!window.confirm(`Hapus ${label} "${slug}" yang dilaporkan?`)) return;
+    if (!window.confirm(`Delete reported ${label} "${slug}"?`)) return;
     setBusyReportId(id);
     try {
       if (resourceType === 'file') { await deleteAdminFile(token, slug); setFiles((f) => f.filter((x) => x.slug !== slug)); setStats((s) => s ? { ...s, total_files: Math.max(0, s.total_files - 1) } : s); }
@@ -191,7 +191,7 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
       setReports((prev) => prev.filter((r) => r.id !== id));
     } catch (err) {
       if (err instanceof APIError && err.status === 404) { await deleteAdminReport(token, id).catch(() => {}); setReports((prev) => prev.filter((r) => r.id !== id)); return; }
-      setError(`Gagal menghapus ${label} "${slug}".`);
+      setError(`Failed to delete ${label} "${slug}".`);
     } finally { setBusyReportId(null); }
   };
 
@@ -304,13 +304,13 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
                 {topPastes.length === 0 ? (
                   <p className="p-4 text-xs font-mono text-on-surface-variant text-center">No data.</p>
                 ) : topPastes.map((p, idx) => (
-                  <div key={p.slug} className="flex items-center justify-between px-4 py-3 gap-2">
-                    <div className="min-w-0 flex-1">
+                  <div key={p.slug} className="flex flex-wrap items-center justify-between px-4 py-3 gap-2">
+                    <div className="min-w-0 flex-auto sm:flex-1">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-mono text-outline w-4 shrink-0">#{idx + 1}</span>
                         <a href={`/${p.slug}`} target="_blank" rel="noopener noreferrer" className="truncate text-sm font-mono text-on-surface hover:text-secondary">{p.title.trim() || 'Untitled'}</a>
                       </div>
-                      <p className="text-xs font-mono text-on-surface-variant pl-6"><code>{p.slug}</code> • {p.language}</p>
+                      <p className="text-xs font-mono text-on-surface-variant pl-6 truncate"><code>{p.slug}</code> • {p.language}</p>
                     </div>
                     <span className="shrink-0 border border-secondary text-secondary px-2 py-0.5 text-[10px] font-mono">{p.views || 0}</span>
                   </div>
@@ -352,7 +352,7 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
 }
 
 function ListSection({ items, busySlug, onDelete, type }: { items: (AdminPasteItem | AdminFileItem)[]; busySlug: string | null; onDelete: (slug: string) => void; type: 'paste' | 'file' }) {
-  if (items.length === 0) return <div className="border-2 border-dashed border-surface-variant bg-surface-container-low px-6 py-12 text-center"><p className="text-xs font-mono text-on-surface-variant">Tidak ada {type === 'paste' ? 'paste' : 'file'}.</p></div>;
+  if (items.length === 0) return <div className="border-2 border-dashed border-surface-variant bg-surface-container-low px-6 py-12 text-center"><p className="text-xs font-mono text-on-surface-variant">No {type === 'paste' ? 'pastes' : 'files'}.</p></div>;
   return (
     <div className="border-2 border-surface-variant divide-y-2 divide-surface-variant">
       {items.map((item: any) => {
@@ -391,7 +391,7 @@ function ReportsTableSection({ reports, busyId, onStatus, onDeleteContent, onDel
   onDeleteContent: (id: string, type: 'paste' | 'file', slug: string) => void;
   onDelete: (id: string) => void;
 }) {
-  if (reports.length === 0) return <div className="border-2 border-dashed border-surface-variant bg-surface-container-low px-6 py-12 text-center"><p className="text-xs font-mono text-on-surface-variant">Belum ada laporan.</p></div>;
+  if (reports.length === 0) return <div className="border-2 border-dashed border-surface-variant bg-surface-container-low px-6 py-12 text-center"><p className="text-xs font-mono text-on-surface-variant">No reports yet.</p></div>;
   return (
     <div className="space-y-2">
       {reports.map((r) => {
