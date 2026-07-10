@@ -1,40 +1,34 @@
-# Multi-stage Dockerfile for Go backend
 FROM golang:1.26-alpine AS builder
-
 WORKDIR /app
 
-# Install compilation dependencies
-RUN apk add --no-cache git gcc musl-dev
-
-# Copy Go dependency files
+# CGO disabled → pure static binary, no gcc/musl-dev needed
+RUN apk add --no-cache git
 COPY go.mod go.sum ./
 RUN go mod download
-
-# Copy backend source code
 COPY . .
-
-# Build the application statically and strip debug info
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o server ./cmd/server
 
-# Final production stage
-FROM alpine:latest
-
+# ---- Production runner ----
+FROM alpine:3.21
 WORKDIR /app
 
-# Install runtime dependencies (ca-certificates needed for HTTPS/S3 communication)
-RUN apk add --no-cache ca-certificates tzdata
+# Runtime deps: HTTPS/S3, timezone data, wget for HEALTHCHECK
+RUN apk add --no-cache ca-certificates tzdata wget
 
-# Copy binary from builder
+# Non-root user
+RUN addgroup -g 1001 -S app && \
+    adduser -S app -u 1001 -G app
+
 COPY --from=builder /app/server .
-
-# Copy web templates and static assets
 COPY --from=builder /app/web ./web
 
-# Create a local upload directory fallback
-RUN mkdir -p uploads
+RUN mkdir -p uploads && chown -R app:app /app
 
-# Expose backend port
+USER app
+
 EXPOSE 8080
 
-# Start server
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 -O /dev/null http://localhost:8080/healthz || exit 1
+
 CMD ["./server"]

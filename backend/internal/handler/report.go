@@ -46,6 +46,7 @@ func RegisterReportRoutes(r chi.Router, h *ReportHandler) {
 // HandleCreate accepts an abuse/content report for a paste or file.
 func (h *ReportHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
 		writeJSONError(w, http.StatusBadRequest, "Form tidak valid", "BAD_REQUEST")
 		return
 	}

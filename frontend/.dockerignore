@@ -5,3 +5,15 @@ out
 .env.*.local
 .git
 .kiro
+Dockerfile
+README.md
+*.log
+.gitignore
+.vscode
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+coverage
+cypress
+__tests__

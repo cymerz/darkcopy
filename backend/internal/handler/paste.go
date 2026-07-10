@@ -122,6 +122,7 @@ func (h *PasteHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
 	if err := r.ParseForm(); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "Form tidak valid", "BAD_REQUEST")
 		return
@@ -293,6 +294,7 @@ func (h *PasteHandler) HandleView(w http.ResponseWriter, r *http.Request) {
 func (h *PasteHandler) HandleUnlock(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
 	if err := r.ParseForm(); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "Form tidak valid", "BAD_REQUEST")
 		return

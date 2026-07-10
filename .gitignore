@@ -33,12 +33,15 @@ backend/tmp/
 # IDE and Editor files
 .vscode/
 .idea/
+.claude/
+.stitch/
 .kiro/
 *.suo
 *.ntvsca
 *.njsproj
 *.sln
 *.swp
+skills-lock.json
 
 # OS-specific files
 .DS_Store

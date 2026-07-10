@@ -4,3 +4,9 @@ uploads
 tmp
 .git
 .kiro
+Dockerfile
+README.md
+*.log
+.gitignore
+.vscode
+**/*_test.go

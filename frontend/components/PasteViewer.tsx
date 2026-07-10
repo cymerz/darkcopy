@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import DOMPurify from 'isomorphic-dompurify';
 import { CopyButton } from '@/components/CopyButton';
 import { CountdownTimer } from '@/components/CountdownTimer';
 import { ReportButton } from '@/components/ReportButton';
@@ -13,12 +14,29 @@ interface PasteViewerProps {
 
 function buildDownloadFilename(title: string, slug: string, extension: string): string {
   const base = title.trim() || `paste-${slug}`;
-  const sanitized = base
-    .replace(/[\\/:*?"<>|]+/g, '')
-    .replace(/\s+/g, '_')
-    .replace(/^[._]+|[._]+$/g, '');
-  const safeBase = sanitized || `paste-${slug}`;
-  return `${safeBase}${extension}`;
+  const sanitized = base.replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, '_').replace(/^[._]+|[._]+$/g, '');
+  return `${sanitized || `paste-${slug}`}${extension}`;
+}
+
+// Map Chroma (dracula-like) hex colors to semantic token classes.
+// The result is colored via CSS variables in globals.css so light/dark mode work.
+const CHROMA_TOKENS: Record<string, string> = {
+  '#ff79c6': 'tok-kw',
+  '#f1fa8c': 'tok-str',
+  '#6272a4': 'tok-com',
+  '#50fa7b': 'tok-fn',
+  '#bd93f9': 'tok-lit',
+  '#8be9fd': 'tok-type',
+  '#ffb86c': 'tok-num',
+  '#f8f8f2': 'tok-base',
+  '#44475a': 'tok-punct',
+};
+
+function themeHighlight(html: string): string {
+  return html.replace(/color:\s*(#[0-9a-fA-F]{3,8})/g, (_m, hex) => {
+    const cls = CHROMA_TOKENS[hex.toLowerCase()];
+    return cls ? `color: rgb(var(--${cls}))` : 'color: inherit';
+  });
 }
 
 export function PasteViewer({ paste }: PasteViewerProps) {
@@ -28,156 +46,98 @@ export function PasteViewer({ paste }: PasteViewerProps) {
   const lineCount = Math.max(1, paste.content.split('\n').length);
   const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1);
 
-  const handleDownload = (): void => {
+  const handleDownload = () => {
     const extension = getFileExtension(paste.language);
     const filename = buildDownloadFilename(paste.title, paste.slug, extension);
     const blob = new Blob([paste.content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = filename;
-    document.body.appendChild(anchor);
-    anchor.click();
+    anchor.href = url; anchor.download = filename;
+    document.body.appendChild(anchor); anchor.click();
     document.body.removeChild(anchor);
     URL.revokeObjectURL(url);
   };
 
   return (
-    <article className="space-y-5">
-      {/* Metadata header */}
-      <header className="space-y-3">
-        <h1 className="break-words text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100">
-          {title}
-        </h1>
-
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-gray-500 dark:text-gray-400">
-          <span className="inline-flex items-center rounded-md border border-accent/30 bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent dark:text-accent-hover">
-            {paste.language}
-          </span>
-
-          <time dateTime={paste.created_at} title={paste.created_at}>
-            {formatRelativeTime(paste.created_at)}
-          </time>
-
-          {paste.remaining_seconds != null ? (
-            <CountdownTimer remainingSeconds={paste.remaining_seconds} />
-          ) : paste.expires_at ? (
-            <span title={paste.expires_at}>
-              Kadaluarsa: {formatRelativeTime(paste.expires_at)}
-            </span>
-          ) : (
-            <span>Tidak pernah kadaluarsa</span>
-          )}
-
-          <span className="text-gray-300 dark:text-dark-600" aria-hidden="true">•</span>
-
-          <span className="inline-flex items-center gap-1.5">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5" aria-hidden="true">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
-            <span>Dilihat {paste.views ?? 0} kali</span>
-          </span>
+    <article className="space-y-6">
+      {/* Terminal-style header */}
+      <div className="border-2 border-secondary bg-secondary/5 px-4 py-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5" aria-hidden="true">
+              <span className="w-2.5 h-2.5 rounded-full bg-success-green animate-terminal-blink" />
+            </div>
+            <h1 className="font-mono text-sm text-secondary uppercase tracking-wider">
+              {'>'} PREVIEW_PASTE.EXE — {title}
+            </h1>
+          </div>
+          <span className="text-label-caps text-outline">STATUS: ACTIVE</span>
         </div>
-      </header>
+      </div>
 
-      {/* Action toolbar — grouped buttons in a clean bar */}
-      <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-gray-200 dark:border-dark-700 bg-gray-50 dark:bg-dark-800/50 p-1.5">
+      {/* Metadata bar */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-mono text-on-surface-variant border-2 border-surface-variant bg-surface-container-low px-4 py-2">
+        <span className="border border-secondary text-secondary px-2 py-0.5">{paste.language}</span>
+        <time dateTime={paste.created_at}>CREATED: {formatRelativeTime(paste.created_at)}</time>
+        {paste.remaining_seconds != null ? (
+          <CountdownTimer remainingSeconds={paste.remaining_seconds} />
+        ) : paste.expires_at ? (
+          <span>EXPIRES: {formatRelativeTime(paste.expires_at)}</span>
+        ) : (
+          <span>TTL: NEVER</span>
+        )}
+        <span className="text-outline">|</span>
+        <span>VIEWS: {paste.views ?? 0}</span>
+      </div>
+
+      {/* Action bar */}
+      <div className="flex flex-wrap items-center gap-2 border-2 border-surface-variant bg-surface-container-lowest p-2">
         <CopyButton content={paste.content} />
-
-        <button
-          type="button"
-          onClick={handleDownload}
-          title="Unduh"
-          className="inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-md border border-gray-200 dark:border-dark-600 bg-white dark:bg-dark-800 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 transition-all hover:bg-gray-50 dark:hover:bg-dark-700 hover:border-gray-300 dark:hover:border-dark-500"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5" aria-hidden="true">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-          Unduh
+        <button type="button" onClick={handleDownload}
+          className="inline-flex min-h-[36px] items-center justify-center gap-1.5 border-2 border-surface-variant bg-surface-container-low px-3 py-1.5 text-xs font-mono text-on-surface-variant transition-all hover:border-secondary hover:text-secondary active:translate-y-[1px]">
+          DOWNLOAD
         </button>
-
-        <a
-          href={`/api/raw/${paste.slug}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          title="Lihat raw"
-          className="inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-md border border-gray-200 dark:border-dark-600 bg-white dark:bg-dark-800 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 transition-all hover:bg-gray-50 dark:hover:bg-dark-700 hover:border-gray-300 dark:hover:border-dark-500"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5" aria-hidden="true">
-            <polyline points="4 7 4 4 20 4 20 7" />
-            <line x1="9" y1="20" x2="15" y2="20" />
-            <line x1="12" y1="4" x2="12" y2="20" />
-          </svg>
-          Raw
+        <a href={`/api/raw/${paste.slug}`} target="_blank" rel="noopener noreferrer"
+          className="inline-flex min-h-[36px] items-center justify-center gap-1.5 border-2 border-surface-variant bg-surface-container-low px-3 py-1.5 text-xs font-mono text-on-surface-variant transition-all hover:border-secondary hover:text-secondary">
+          RAW
         </a>
-
-        {/* Separator */}
-        <div className="hidden sm:block mx-1 h-5 w-px bg-gray-200 dark:bg-dark-600" aria-hidden="true" />
-
-        {/* Syntax highlighting toggle */}
-        <button
-          type="button"
-          onClick={() => setShowHighlighting((v) => !v)}
-          title={showHighlighting ? 'Matikan syntax highlighting' : 'Nyalakan syntax highlighting'}
+        <div className="mx-1 h-5 w-px bg-surface-variant" aria-hidden="true" />
+        <button type="button" onClick={() => setShowHighlighting((v) => !v)}
           aria-pressed={showHighlighting}
-          className={`inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-all ${
+          className={`inline-flex min-h-[36px] items-center justify-center px-3 py-1.5 text-xs font-mono uppercase tracking-wider border-2 transition-all ${
             showHighlighting
-              ? 'border-accent/40 bg-accent/10 text-accent dark:text-accent-hover'
-              : 'border-gray-200 dark:border-dark-600 bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700'
-          }`}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5" aria-hidden="true">
-            <polyline points="16 18 22 12 16 6" />
-            <polyline points="8 6 2 12 8 18" />
-          </svg>
-          {showHighlighting ? 'Highlighted' : 'Plain Text'}
+              ? 'border-secondary text-secondary bg-secondary/10'
+              : 'border-surface-variant text-on-surface-variant hover:border-secondary hover:text-secondary'
+          }`}>
+          {showHighlighting ? 'HIGHLIGHTED' : 'PLAIN TEXT'}
         </button>
-
-        {/* Push the report button to the far right */}
         <div className="sm:ml-auto">
           <ReportButton resourceType="paste" slug={paste.slug} compact />
         </div>
       </div>
 
-      {/* Code content with line-number gutter.
-          When syntax highlighting is ON, the panel stays dark in BOTH themes so
-          the backend's dark-tuned (dracula) colors remain readable on light
-          pages. In plain-text mode the panel follows the active theme. */}
-      <div
-        className={`flex overflow-hidden rounded-lg border ${
-          showHighlighting
-            ? 'border-dark-700 bg-dark-800'
-            : 'border-gray-200 dark:border-dark-700 bg-white dark:bg-dark-800'
-        }`}
-      >
-        <div
-          aria-hidden="true"
-          className={`shrink-0 select-none border-r px-3 py-4 text-right font-mono text-xs leading-6 ${
-            showHighlighting
-              ? 'border-dark-700 bg-dark-900/60 text-gray-500'
-              : 'border-gray-200 dark:border-dark-700 bg-gray-50 dark:bg-dark-900/60 text-gray-400 dark:text-gray-500'
-          }`}
-        >
-          {lineNumbers.map((n) => (
-            <div key={n}>{n}</div>
-          ))}
+      {/* Terminal window with code */}
+      <div className="border-2 border-surface-variant rounded-lg overflow-hidden bg-terminal-bg">
+        <div className="flex items-center gap-2 px-4 py-2 bg-surface-container-low border-b-2 border-surface-variant">
+          <div className="flex items-center gap-1.5" aria-hidden="true">
+            <span className="w-2.5 h-2.5 rounded-full bg-danger-red" />
+            <span className="w-2.5 h-2.5 rounded-full bg-tertiary" />
+            <span className="w-2.5 h-2.5 rounded-full bg-success-green" />
+          </div>
+          <span className="text-xs text-on-surface-variant font-mono uppercase tracking-wider ml-2">{title.replace(/\s+/g, '_').toLowerCase()}.txt</span>
+          <span className="ml-auto text-xs text-on-surface-variant font-mono">{paste.language}</span>
         </div>
-
-        <div
-          className={`min-w-0 flex-1 overflow-x-auto px-4 py-4 font-mono text-sm leading-6 ${
-            showHighlighting
-              ? 'text-gray-100'
-              : 'text-gray-900 dark:text-gray-100'
-          }`}
-        >
-          {showHighlighting ? (
-            <div className="darkcopy-code" dangerouslySetInnerHTML={{ __html: paste.highlighted_html }} />
-          ) : (
-            <pre className="whitespace-pre">{paste.content}</pre>
-          )}
+        <div className="flex">
+          <div aria-hidden="true" className="shrink-0 select-none border-r-2 border-surface-variant px-3 py-4 text-right font-mono text-xs leading-6 text-outline bg-terminal-bg">
+            {lineNumbers.map((n) => <div key={n}>{n}</div>)}
+          </div>
+          <div className="min-w-0 flex-1 overflow-x-auto px-4 py-4 font-mono text-sm leading-6 text-on-surface">
+            {showHighlighting ? (
+              <div className="darkcopy-code" dangerouslySetInnerHTML={{ __html: themeHighlight(DOMPurify.sanitize(paste.highlighted_html)) }} />
+            ) : (
+              <pre className="whitespace-pre">{paste.content}</pre>
+            )}
+          </div>
         </div>
       </div>
     </article>
