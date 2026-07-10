@@ -18,6 +18,27 @@ function buildDownloadFilename(title: string, slug: string, extension: string): 
   return `${sanitized || `paste-${slug}`}${extension}`;
 }
 
+// Map Chroma (dracula-like) hex colors to semantic token classes.
+// The result is colored via CSS variables in globals.css so light/dark mode work.
+const CHROMA_TOKENS: Record<string, string> = {
+  '#ff79c6': 'tok-kw',
+  '#f1fa8c': 'tok-str',
+  '#6272a4': 'tok-com',
+  '#50fa7b': 'tok-fn',
+  '#bd93f9': 'tok-lit',
+  '#8be9fd': 'tok-type',
+  '#ffb86c': 'tok-num',
+  '#f8f8f2': 'tok-base',
+  '#44475a': 'tok-punct',
+};
+
+function themeHighlight(html: string): string {
+  return html.replace(/color:\s*(#[0-9a-fA-F]{3,8})/g, (_m, hex) => {
+    const cls = CHROMA_TOKENS[hex.toLowerCase()];
+    return cls ? `color: rgb(var(--${cls}))` : 'color: inherit';
+  });
+}
+
 export function PasteViewer({ paste }: PasteViewerProps) {
   const title = paste.title.trim() || 'Untitled';
   const [showHighlighting, setShowHighlighting] = useState(true);
@@ -112,7 +133,7 @@ export function PasteViewer({ paste }: PasteViewerProps) {
           </div>
           <div className="min-w-0 flex-1 overflow-x-auto px-4 py-4 font-mono text-sm leading-6 text-on-surface">
             {showHighlighting ? (
-              <div className="darkcopy-code" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(paste.highlighted_html) }} />
+              <div className="darkcopy-code" dangerouslySetInnerHTML={{ __html: themeHighlight(DOMPurify.sanitize(paste.highlighted_html)) }} />
             ) : (
               <pre className="whitespace-pre">{paste.content}</pre>
             )}

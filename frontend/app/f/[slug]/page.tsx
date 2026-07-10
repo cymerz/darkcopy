@@ -160,7 +160,7 @@ function FileInfo({ slug, metadata }: { slug: string; metadata: FileMetadata }) 
                 className="flex min-h-[44px] w-full items-center justify-center gap-2 border-2 border-secondary text-secondary font-mono font-bold text-sm uppercase tracking-wider transition-all duration-200 hover:bg-secondary hover:text-black hover:shadow-[0_0_20px_rgba(76,215,246,0.4)] active:translate-y-[2px]">
                 {'>'} DOWNLOAD FILE
               </a>
-              <GenerateLinkButton />
+              <GenerateLinkButton slug={slug} />
               <button type="button" disabled
                 className="flex min-h-[44px] w-full items-center justify-center gap-2 border-2 border-danger-red/40 text-danger-red/40 font-mono text-sm uppercase tracking-wider cursor-not-allowed">
                 [ DESTROY DATA ] — ADMIN ONLY

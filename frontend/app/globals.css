@@ -26,6 +26,17 @@
     --color-outline-variant: 202 187 212;
     --color-error: 185 28 28;
     --color-error-container: 254 226 226;
+
+    /* Chroma syntax tokens — light theme */
+    --tok-kw: 173 35 121;
+    --tok-str: 5 100 80;
+    --tok-com: 110 110 130;
+    --tok-fn: 5 110 60;
+    --tok-lit: 110 60 173;
+    --tok-type: 5 100 130;
+    --tok-num: 145 91 0;
+    --tok-base: 31 24 35;
+    --tok-punct: 86 74 95;
   }
 
   .dark {
@@ -51,6 +62,17 @@
     --color-outline-variant: 77 67 84;
     --color-error: 255 180 171;
     --color-error-container: 147 0 10;
+
+    /* Chroma syntax tokens — dark theme (dracula-aligned) */
+    --tok-kw: 255 121 198;
+    --tok-str: 241 250 140;
+    --tok-com: 98 114 164;
+    --tok-fn: 80 250 123;
+    --tok-lit: 189 147 249;
+    --tok-type: 139 233 253;
+    --tok-num: 255 184 108;
+    --tok-base: 248 248 242;
+    --tok-punct: 68 71 90;
   }
 
 

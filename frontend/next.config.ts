@@ -5,9 +5,12 @@ const csp = [
   "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
-  "img-src 'self' data: blob:",
-  "media-src 'self' blob:",
-  "connect-src 'self'",
+  "img-src 'self' data: blob: https: http:",
+  "media-src 'self' blob: https: http:",
+  // connect-src must be permissive for presigned S3-compatible upload URLs
+  // (configurable to any provider — AWS, Scaleway, Backblaze, MinIO, etc.).
+  // NEXT_PUBLIC_CSP_CONNECT_SRC env var overrides default 'self' https: http:.
+  "connect-src 'self' https: http:",
   "form-action 'self'",
   "frame-ancestors 'none'",
   "base-uri 'self'",
