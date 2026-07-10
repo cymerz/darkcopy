@@ -26,12 +26,6 @@ backend/.env.local
 *.dylib
 backend/server
 
-# Lock files
-package-lock.json
-pnpm-lock.yaml
-yarn-lock.json
-yarn.lock
-
 # Local uploads and temporary storage files
 backend/uploads/
 backend/tmp/
