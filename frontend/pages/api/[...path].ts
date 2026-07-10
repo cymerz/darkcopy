@@ -21,13 +21,27 @@ export default function handler(req: IncomingMessage, res: ServerResponse) {
 
   const targetUrl = new URL(`${backendUrl}${path}${search}`);
 
-  // Forward incoming headers, omitting host and standard hop-by-hop headers
-  const headers = { ...req.headers };
-  delete headers.host;
-  delete headers.connection;
-  delete headers.keepalive;
-  delete headers.te;
-  delete headers.upgrade;
+  // Allowlist headers to forward (prevents smuggling via transfer-encoding, etc.)
+  const allowedHeaders = new Set([
+    'content-type',
+    'content-length',
+    'authorization',
+    'user-agent',
+    'accept',
+    'accept-language',
+    'accept-encoding',
+    'referer',
+    'origin',
+    'cookie',
+    'x-requested-with',
+    'x-admin-token',
+  ]);
+  const headers: Record<string, string | string[]> = {};
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (allowedHeaders.has(key.toLowerCase())) {
+      headers[key] = value as string | string[];
+    }
+  }
 
   const proxyReq = http.request(
     {

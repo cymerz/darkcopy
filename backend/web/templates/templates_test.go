@@ -14,12 +14,12 @@ func TestTemplatesParse(t *testing.T) {
 		t.Fatalf("cannot find templates directory: %v", err)
 	}
 
-	// Define template function map (safeHTML is commonly needed).
-	funcMap := template.FuncMap{
-		"safeHTML": func(s string) template.HTML {
-			return template.HTML(s)
-		},
-	}
+	// safeHTML is ONLY needed for test-level parsing because paste_view.html
+	// references it. These templates are NOT used at runtime (backend returns
+	// JSON). If reconnected to production rendering, every pipeline source
+	// must be audited for XSS before using safeHTML.
+	funcMap := template.FuncMap{}
+	funcMap["safeHTML"] = func(s string) template.HTML { return template.HTML(s) }
 
 	// Test that each template can be parsed together with base.html.
 	templates := []string{

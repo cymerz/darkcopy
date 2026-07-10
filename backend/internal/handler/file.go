@@ -146,6 +146,10 @@ func (h *FileHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Apply max body size cap before parsing multipart form.
+	const maxBodySize = maxUploadMemory + file.MaxFileSize
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
+
 	if err := r.ParseMultipartForm(maxUploadMemory); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{
 			Error:  "Gagal memproses form upload",
@@ -391,6 +395,7 @@ func (h *FileHandler) UnlockFile(w http.ResponseWriter, r *http.Request) {
 
 	// Parse password from form.
 	if err := r.ParseForm(); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
 		writeJSON(w, http.StatusBadRequest, errorResponse{
 			Error:  "Form tidak valid",
 			Code:   "BAD_REQUEST",

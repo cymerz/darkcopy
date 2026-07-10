@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import DOMPurify from 'isomorphic-dompurify';
 import { CopyButton } from '@/components/CopyButton';
 import { CountdownTimer } from '@/components/CountdownTimer';
 import { ReportButton } from '@/components/ReportButton';
@@ -111,7 +112,7 @@ export function PasteViewer({ paste }: PasteViewerProps) {
           </div>
           <div className="min-w-0 flex-1 overflow-x-auto px-4 py-4 font-mono text-sm leading-6 text-on-surface">
             {showHighlighting ? (
-              <div className="darkcopy-code" dangerouslySetInnerHTML={{ __html: paste.highlighted_html }} />
+              <div className="darkcopy-code" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(paste.highlighted_html) }} />
             ) : (
               <pre className="whitespace-pre">{paste.content}</pre>
             )}

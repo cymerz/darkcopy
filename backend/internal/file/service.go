@@ -1,6 +1,7 @@
 package file
 
 import (
+	"sync"
 	"bufio"
 	"context"
 	"errors"
@@ -30,6 +31,11 @@ const NeverExpires = time.Duration(-1)
 
 // DefaultPresignExpiry is the default expiry for presigned download URLs.
 const DefaultPresignExpiry = 1 * time.Hour
+
+// copyBufPool reduces heap allocations for the 4 MB ServeFile buffer.
+var copyBufPool = sync.Pool{
+	New: func() interface{} { b := make([]byte, 4*1024*1024); return b },
+}
 
 // ErrPresignUnsupported is returned when the storage backend does not support presigning.
 var ErrPresignUnsupported = errors.New("storage backend does not support presigned URLs")
@@ -326,7 +332,8 @@ func (s *Service) ServeFile(ctx context.Context, slug string, w http.ResponseWri
 
 	// Optimize streaming performance for media (videos/audio) by using a massive 4MB buffer.
 	// This reduces small TCP/I/O system call overhead, preventing video buffering lags.
-	buf := make([]byte, 4*1024*1024) // 4 MB buffer
+	buf := copyBufPool.Get().([]byte)
+	defer copyBufPool.Put(buf)
 	_, err = io.CopyBuffer(w, bufferedStream, buf)
 	return err
 }
