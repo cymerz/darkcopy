@@ -18,9 +18,7 @@ const NAV_LINKS: NavLink[] = [
 
 function isActivePath(pathname: string | null, href: string): boolean {
   if (!pathname) return false;
-  if (href === '/') {
-    return pathname === '/';
-  }
+  if (href === '/') return pathname === '/';
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -32,7 +30,7 @@ export function Header() {
   const toggleMenu = () => setIsMenuOpen((open) => !open);
 
   return (
-    <header className="sticky top-0 z-50 bg-white/80 dark:bg-dark-800/80 backdrop-blur-md border-b border-gray-200 dark:border-dark-700">
+    <header className="sticky top-0 z-50 bg-background/95 border-b-2 border-secondary shadow-[0_0_15px_rgba(76,215,246,0.3)]">
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
         <div className="relative flex items-center justify-between h-16">
           {/* Branding */}
@@ -43,25 +41,17 @@ export function Header() {
             aria-label="DarkCopy beranda"
           >
             <span
-              className="flex items-center justify-center w-9 h-9 rounded-lg bg-accent text-white shadow-sm shadow-accent/30 group-hover:bg-accent-hover transition-colors"
+              className="flex items-center justify-center w-9 h-9 rounded-sm bg-secondary text-background font-mono font-bold text-sm shadow-[0_0_10px_rgba(76,215,246,0.5)]"
               aria-hidden="true"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                className="w-5 h-5"
-              >
-                <path d="M13 2 4.5 13.5h6L9 22l9.5-12.5h-6L13 2z" />
-              </svg>
+              DC
             </span>
-            <span className="font-mono font-bold text-lg tracking-tight text-gray-900 dark:text-gray-100 group-hover:text-black dark:group-hover:text-white transition-colors">
-              DarkCopy
+            <span className="font-mono font-bold text-lg tracking-tight text-secondary group-hover:shadow-[0_0_15px_rgba(76,215,246,0.5)] transition-shadow">
+              DARKCOPY
             </span>
           </Link>
 
-          {/* Desktop Navigation — absolutely centered so it stays mid-header
-              regardless of the logo / right-side control widths. */}
+          {/* Desktop Navigation — absolutely centered */}
           <nav
             className="hidden md:flex items-center gap-1 absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
             aria-label="Navigasi utama"
@@ -73,25 +63,19 @@ export function Header() {
                   key={link.href}
                   href={link.href}
                   aria-current={active ? 'page' : undefined}
-                  className={`relative inline-flex min-h-[44px] items-center px-4 py-2.5 rounded-md text-sm font-medium transition-colors ${
+                  className={`relative inline-flex min-h-[44px] items-center px-4 py-2.5 text-sm font-mono font-bold uppercase tracking-wider transition-colors ${
                     active
-                      ? 'text-accent dark:text-accent-hover'
-                      : 'text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                      ? 'text-secondary border-b-2 border-secondary'
+                      : 'text-on-surface-variant hover:text-secondary'
                   }`}
                 >
                   {link.label}
-                  {active && (
-                    <span
-                      aria-hidden="true"
-                      className="absolute left-4 right-4 -bottom-px h-0.5 bg-accent dark:bg-accent-hover rounded-full"
-                    />
-                  )}
                 </Link>
               );
             })}
           </nav>
 
-          {/* Right-side controls: theme toggle + mobile menu button */}
+          {/* Right-side controls */}
           <div className="flex items-center gap-2">
             <ThemeToggle />
             <button
@@ -100,7 +84,7 @@ export function Header() {
               aria-expanded={isMenuOpen}
               aria-controls="mobile-menu"
               aria-label={isMenuOpen ? 'Tutup menu' : 'Buka menu'}
-              className="md:hidden inline-flex items-center justify-center w-11 h-11 rounded-md text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-dark-700/60 transition-colors"
+              className="md:hidden inline-flex items-center justify-center w-11 h-11 rounded-sm text-on-surface-variant hover:text-secondary border border-surface-variant hover:border-secondary transition-colors"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -110,7 +94,7 @@ export function Header() {
                 strokeWidth={2}
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                className="w-6 h-6"
+                className="w-5 h-5"
                 aria-hidden="true"
               >
                 {isMenuOpen ? (
@@ -134,16 +118,13 @@ export function Header() {
       {/* Mobile menu drawer */}
       <div
         id="mobile-menu"
-        className={`md:hidden absolute top-full left-0 right-0 w-full overflow-hidden border-b border-gray-200 dark:border-dark-700 bg-white/95 dark:bg-dark-800/95 backdrop-blur-lg shadow-xl transition-all duration-200 ease-out origin-top ${
+        className={`md:hidden absolute top-full left-0 right-0 w-full overflow-hidden border-b-2 border-surface-variant bg-surface-container-low shadow-lg transition-all duration-200 ease-out origin-top ${
           isMenuOpen
             ? 'opacity-100 translate-y-0 scale-y-100 pointer-events-auto'
             : 'opacity-0 -translate-y-2 scale-y-95 pointer-events-none'
         }`}
       >
-        <nav
-          className="flex flex-col px-4 sm:px-6 py-4 gap-1.5"
-          aria-label="Navigasi mobile"
-        >
+        <nav className="flex flex-col px-4 sm:px-6 py-4 gap-1.5" aria-label="Navigasi mobile">
           {NAV_LINKS.map((link) => {
             const active = isActivePath(pathname, link.href);
             return (
@@ -152,10 +133,10 @@ export function Header() {
                 href={link.href}
                 onClick={closeMenu}
                 aria-current={active ? 'page' : undefined}
-                className={`flex min-h-[44px] items-center px-4 py-2.5 rounded-md text-base font-semibold transition-all ${
+                className={`flex min-h-[44px] items-center px-4 py-2.5 text-sm font-mono font-bold uppercase tracking-wider transition-all ${
                   active
-                    ? 'text-accent dark:text-accent-hover bg-accent/5 dark:bg-dark-700/30'
-                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-dark-700/20'
+                    ? 'text-secondary border-l-2 border-secondary bg-secondary/5'
+                    : 'text-on-surface-variant hover:text-secondary hover:border-l-2 hover:border-secondary'
                 }`}
               >
                 {link.label}

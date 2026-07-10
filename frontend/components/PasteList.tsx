@@ -1,10 +1,3 @@
-// components/PasteList.tsx
-//
-// Server Component that renders a list of recent public pastes. Each paste is
-// shown as a dark card linking to its view page (`/{slug}`) via Next.js
-// client-side navigation. No interactivity is required, so this stays a
-// Server Component (no 'use client').
-
 import Link from 'next/link';
 import type { PasteSummary } from '@/lib/types';
 import { formatRelativeTime } from '@/lib/utils';
@@ -13,65 +6,52 @@ interface PasteListProps {
   pastes: PasteSummary[];
 }
 
-/**
- * Renders recent public pastes as a vertical stack of cards. When the list is
- * empty, a friendly Indonesian empty-state message is shown instead.
- *
- * Each card displays:
- * - the paste title (falling back to "Untitled" when empty/whitespace)
- * - a language badge styled with the accent color
- * - the relative creation time via `formatRelativeTime(created_at)`
- *
- * Tapping a card navigates to `/{slug}` using Next.js `Link` (client-side
- * navigation, Requirement 1.3).
- */
 export function PasteList({ pastes }: PasteListProps) {
   if (!pastes || pastes.length === 0) {
     return (
-      <div
-        className="rounded-xl border border-dashed border-gray-200 dark:border-dark-700 bg-gray-50 dark:bg-dark-800/50 px-6 py-12 text-center"
-        role="status"
-      >
-        <p className="text-gray-700 dark:text-gray-300">Belum ada paste publik</p>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-500">
-          Paste publik terbaru akan muncul di sini.
-        </p>
+      <div className="border-2 border-dashed border-surface-variant bg-surface-container-low px-6 py-12 text-center" role="status">
+        <p className="text-on-surface font-mono text-sm uppercase tracking-wider">Belum ada paste publik</p>
+        <p className="mt-1 text-xs text-on-surface-variant font-mono">Paste publik terbaru akan muncul di sini.</p>
       </div>
     );
   }
 
   return (
-    <ul className="flex flex-col gap-3">
-      {pastes.map((paste) => {
-        const title = paste.title.trim() || 'Untitled';
-
-        return (
-          <li key={paste.slug}>
-            <Link
-              href={`/${paste.slug}`}
-              className="group block rounded-xl border border-gray-200 dark:border-dark-700 bg-white dark:bg-dark-800 transition-colors hover:border-accent/60 hover:bg-gray-100 dark:hover:bg-dark-700"
-            >
-              <div className="flex items-center justify-between gap-4 p-4 min-h-[44px]">
-                <h2 className="min-w-0 flex-1 truncate font-medium text-gray-900 dark:text-gray-100 transition-colors group-hover:text-gray-900 dark:group-hover:text-white">
-                  {title}
+    <div className="border-2 border-surface-variant bg-surface-container rounded-lg overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-2 bg-surface-container-low border-b-2 border-surface-variant">
+        <div className="flex items-center gap-1.5" aria-hidden="true">
+          <span className="w-2.5 h-2.5 rounded-full bg-danger-red" />
+          <span className="w-2.5 h-2.5 rounded-full bg-tertiary" />
+          <span className="w-2.5 h-2.5 rounded-full bg-success-green" />
+        </div>
+        <span className="text-xs text-on-surface-variant font-mono uppercase tracking-wider ml-2">RECENT_PASTES.LOG</span>
+      </div>
+      <ul className="divide-y-2 divide-surface-variant">
+        {pastes.map((paste) => {
+          const title = paste.title.trim() || 'Untitled';
+          return (
+            <li key={paste.slug}>
+              <Link
+                href={`/${paste.slug}`}
+                className="group flex items-center justify-between gap-4 px-4 py-3 min-h-[44px] transition-colors hover:bg-surface-container-low hover:shadow-[inset_0_0_15px_rgba(76,215,246,0.05)]"
+              >
+                <h2 className="min-w-0 flex-1 truncate font-mono text-sm text-on-surface group-hover:text-secondary transition-colors">
+                  {'>'} {title}
                 </h2>
                 <div className="flex shrink-0 items-center gap-3">
-                  <span className="rounded-full bg-accent/10 dark:bg-accent/15 px-2.5 py-0.5 text-xs font-medium text-accent dark:text-accent-hover">
+                  <span className="border border-secondary text-secondary px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider">
                     {paste.language}
                   </span>
-                  <time
-                    dateTime={paste.created_at}
-                    className="text-sm text-gray-500 dark:text-gray-400"
-                  >
+                  <time dateTime={paste.created_at} className="text-xs text-on-surface-variant font-mono">
                     {formatRelativeTime(paste.created_at)}
                   </time>
                 </div>
-              </div>
-            </Link>
-          </li>
-        );
-      })}
-    </ul>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 

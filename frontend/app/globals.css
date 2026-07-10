@@ -3,65 +3,89 @@
 @tailwind utilities;
 
 @layer base {
-  /* Light mode defaults */
   :root {
-    --bg-primary: #ffffff;
-    --bg-secondary: #f8fafc;
-    --bg-tertiary: #f1f5f9;
-    --border-color: #e2e8f0;
-    --text-primary: #0f172a;
-    --text-secondary: #475569;
-    --text-muted: #94a3b8;
+    --color-primary: 91 44 132;
+    --color-secondary: 0 111 135;
+    --color-tertiary: 145 91 0;
+    --color-hot-pink: 180 35 107;
+    --color-success-green: 22 101 52;
+    --color-danger-red: 185 28 28;
+    --color-background: 250 247 252;
+    --color-terminal-bg: 255 255 255;
+    --color-surface-container-lowest: 255 255 255;
+    --color-surface-container-low: 245 240 248;
+    --color-surface-container: 239 232 244;
+    --color-surface-container-high: 231 222 238;
+    --color-surface-container-highest: 220 209 228;
+    --color-surface-variant: 210 198 218;
+    --color-surface-dark: 232 240 248;
+    --color-on-background: 31 24 35;
+    --color-on-surface: 31 24 35;
+    --color-on-surface-variant: 86 74 95;
+    --color-outline: 112 97 123;
+    --color-outline-variant: 202 187 212;
+    --color-error: 185 28 28;
+    --color-error-container: 254 226 226;
   }
 
-  /* Dark mode overrides */
   .dark {
-    --bg-primary: #07090e;      /* Deep luxurious midnight void */
-    --bg-secondary: #0f131a;    /* Premium slate card bg */
-    --bg-tertiary: #171e2b;     /* Deep metallic steel hover bg */
-    --border-color: #1c2433;    /* Polished steel grey border */
-    --text-primary: #f1f5f9;    /* Refined bright text */
-    --text-secondary: #94a3b8;  /* Muted slate blue text */
-    --text-muted: #64748b;      /* Metal grey helper text */
+    --color-primary: 221 183 255;
+    --color-secondary: 76 215 246;
+    --color-tertiary: 250 188 78;
+    --color-hot-pink: 244 114 182;
+    --color-success-green: 34 197 94;
+    --color-danger-red: 239 68 68;
+    --color-background: 22 17 27;
+    --color-terminal-bg: 9 9 11;
+    --color-surface-container-lowest: 17 12 21;
+    --color-surface-container-low: 31 26 35;
+    --color-surface-container: 35 30 39;
+    --color-surface-container-high: 46 40 50;
+    --color-surface-container-highest: 57 50 61;
+    --color-surface-variant: 57 50 61;
+    --color-surface-dark: 30 41 59;
+    --color-on-background: 234 223 237;
+    --color-on-surface: 234 223 237;
+    --color-on-surface-variant: 207 194 214;
+    --color-outline: 152 141 159;
+    --color-outline-variant: 77 67 84;
+    --color-error: 255 180 171;
+    --color-error-container: 147 0 10;
   }
+
 
   /* Custom scrollbar styling */
   ::-webkit-scrollbar {
     @apply w-2 h-2;
   }
 
-  .dark ::-webkit-scrollbar-track {
-    @apply bg-dark-800;
-  }
-
-  .dark ::-webkit-scrollbar-thumb {
-    @apply bg-dark-500 rounded-full;
-  }
-
-  .dark ::-webkit-scrollbar-thumb:hover {
-    @apply bg-dark-400;
-  }
-
   ::-webkit-scrollbar-track {
-    @apply bg-gray-100;
+    @apply bg-terminal-bg;
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-gray-300 rounded-full;
+    @apply bg-surface-variant rounded-full;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-gray-400;
+    @apply bg-outline;
   }
 
   /* Selection color */
   ::selection {
-    @apply bg-accent/30 text-white;
+    background: rgba(76, 215, 246, 0.3);
+    color: #eadfed;
+  }
+
+  /* Floatplane-style dot grid background */
+  .dot-grid {
+    background-image: radial-gradient(circle, #4d4354 1px, transparent 1px);
+    background-size: 24px 24px;
   }
 }
 
 @layer components {
-  /* Backend-generated syntax-highlighted code rendered by the Paste_Viewer */
+  /* Backend-generated syntax-highlighted code */
   .darkcopy-code pre {
     margin: 0;
     white-space: pre;
