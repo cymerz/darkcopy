@@ -272,9 +272,9 @@ export interface AdminReportListResponse {
 /** Canonical report reasons offered to users (must match the backend). */
 export const REPORT_REASONS: { value: string; label: string }[] = [
   { value: 'spam', label: 'Spam' },
-  { value: 'illegal', label: 'Konten Ilegal' },
-  { value: 'malware', label: 'Malware / Berbahaya' },
-  { value: 'copyright', label: 'Pelanggaran Hak Cipta' },
-  { value: 'personal_info', label: 'Informasi Pribadi' },
-  { value: 'other', label: 'Lainnya' },
+  { value: 'illegal', label: 'Illegal Content' },
+  { value: 'malware', label: 'Malware / Harmful' },
+  { value: 'copyright', label: 'Copyright Infringement' },
+  { value: 'personal_info', label: 'Personal Information' },
+  { value: 'other', label: 'Other' },
 ];

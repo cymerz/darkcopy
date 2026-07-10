@@ -30,14 +30,14 @@ export function Footer() {
               href="/new"
               className="transition-colors hover:text-hot-pink focus:outline-none"
             >
-              Buat Paste
+              Create Paste
             </Link>
             {' / '}
             <Link
               href="/upload"
               className="transition-colors hover:text-hot-pink focus:outline-none"
             >
-              Unggah File
+              Upload File
             </Link>
             {' / '}
             <Link

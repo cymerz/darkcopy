@@ -29,12 +29,12 @@ function notifyTokenListeners(): void { tokenListeners.forEach((l) => l()); }
 function setStoredToken(token: string): void { sessionStorage.setItem(TOKEN_STORAGE_KEY, token); notifyTokenListeners(); }
 function clearStoredToken(): void { sessionStorage.removeItem(TOKEN_STORAGE_KEY); notifyTokenListeners(); }
 
-const VISIBILITY_LABELS: Record<string, string> = { public: 'Publik', unlisted: 'Tidak Terdaftar', password_protected: 'Dilindungi Sandi' };
+const VISIBILITY_LABELS: Record<string, string> = { public: 'Public', unlisted: 'Unlisted', password_protected: 'Password Protected' };
 const REASON_LABELS: Record<string, string> = Object.fromEntries(REPORT_REASONS.map((r) => [r.value, r.label]));
 function reasonLabel(reason: string): string { return REASON_LABELS[reason] ?? reason; }
 function isExpired(expiresAt: string | null): boolean { if (!expiresAt) return false; return new Date(expiresAt).getTime() < Date.now(); }
 
-const REPORT_STATUS_LABELS: Record<string, string> = { pending: 'Tertunda', reviewed: 'Ditinjau', dismissed: 'Diabaikan' };
+const REPORT_STATUS_LABELS: Record<string, string> = { pending: 'Pending', reviewed: 'Reviewed', dismissed: 'Dismissed' };
 
 function TabBar({ tabs, current, onChange }: { tabs: { key: string; label: string; count?: number; alert?: boolean }[]; current: string; onChange: (k: string) => void }) {
   return (
@@ -77,7 +77,7 @@ function TokenGate() {
       await getAdminStats(trimmed);
       setStoredToken(trimmed);
     } catch (err) {
-      setError(err instanceof APIError ? (err.status === 404 ? 'Admin API tidak aktif di server.' : 'Token admin tidak valid.') : 'Terjadi kesalahan.');
+      setError(err instanceof APIError ? (err.status === 404 ? 'Admin API is not active on the server.' : 'Invalid admin token.') : 'An error occurred.');
       setLoading(false);
     }
   };
@@ -89,7 +89,7 @@ function TokenGate() {
           <span className="text-3xl text-secondary font-mono">{'[!]'}</span>
         </div>
         <h1 className="mb-1 text-center font-mono text-lg text-secondary uppercase tracking-wider">ADMIN ACCESS</h1>
-        <p className="mb-6 text-center text-xs font-mono text-on-surface-variant">MASUKKAN TOKEN ADMIN UNTUK MELANJUTKAN.</p>
+        <p className="mb-6 text-center text-xs font-mono text-on-surface-variant">ENTER ADMIN TOKEN TO CONTINUE.</p>
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div className="space-y-2">
             <label htmlFor="admin-token" className="text-label-caps text-secondary">ADMIN_TOKEN</label>
@@ -139,7 +139,7 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
       } catch (err) {
         if (cancelled) return;
         if (err instanceof APIError && (err.status === 401 || err.status === 404)) { onLogout(); return; }
-        setError('Gagal memuat statistik admin.');
+        setError('Failed to load admin statistics.');
       } finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
@@ -147,37 +147,37 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
 
   useEffect(() => {
     if (tab !== 'pastes') return; let cancelled = false;
-    (async () => { try { setLoadingPastes(true); const r = await getAdminPastes(token); if (cancelled) return; setPastes(r.pastes ?? []); setError(null); } catch (err) { if (cancelled) return; if (err instanceof APIError && (err.status === 401 || err.status === 404)) { onLogout(); return; } setError('Gagal memuat daftar paste.'); } finally { if (!cancelled) setLoadingPastes(false); } })();
+    (async () => { try { setLoadingPastes(true); const r = await getAdminPastes(token); if (cancelled) return; setPastes(r.pastes ?? []); setError(null); } catch (err) { if (cancelled) return; if (err instanceof APIError && (err.status === 401 || err.status === 404)) { onLogout(); return; } setError('Failed to load paste list.'); } finally { if (!cancelled) setLoadingPastes(false); } })();
     return () => { cancelled = true; };
   }, [token, onLogout, tab, reloadKey]);
 
   useEffect(() => {
     if (tab !== 'files') return; let cancelled = false;
-    (async () => { try { setLoadingFiles(true); const r = await getAdminFiles(token); if (cancelled) return; setFiles(r.files ?? []); setError(null); } catch (err) { if (cancelled) return; if (err instanceof APIError && (err.status === 401 || err.status === 404)) { onLogout(); return; } setError('Gagal memuat daftar file.'); } finally { if (!cancelled) setLoadingFiles(false); } })();
+    (async () => { try { setLoadingFiles(true); const r = await getAdminFiles(token); if (cancelled) return; setFiles(r.files ?? []); setError(null); } catch (err) { if (cancelled) return; if (err instanceof APIError && (err.status === 401 || err.status === 404)) { onLogout(); return; } setError('Failed to load file list.'); } finally { if (!cancelled) setLoadingFiles(false); } })();
     return () => { cancelled = true; };
   }, [token, onLogout, tab, reloadKey]);
 
   useEffect(() => {
     if (tab !== 'reports') return; let cancelled = false;
-    (async () => { try { setLoadingReports(true); const r = await getAdminReports(token); if (cancelled) return; setReports(r.reports ?? []); setError(null); } catch (err) { if (cancelled) return; if (err instanceof APIError && (err.status === 401 || err.status === 404)) { onLogout(); return; } setError('Gagal memuat daftar laporan.'); } finally { if (!cancelled) setLoadingReports(false); } })();
+    (async () => { try { setLoadingReports(true); const r = await getAdminReports(token); if (cancelled) return; setReports(r.reports ?? []); setError(null); } catch (err) { if (cancelled) return; if (err instanceof APIError && (err.status === 401 || err.status === 404)) { onLogout(); return; } setError('Failed to load report list.'); } finally { if (!cancelled) setLoadingReports(false); } })();
     return () => { cancelled = true; };
   }, [token, onLogout, tab, reloadKey]);
 
   const handleDeletePaste = async (slug: string) => {
     if (!window.confirm(`Hapus paste "${slug}"?`)) return;
     setBusySlug(slug);
-    try { await deleteAdminPaste(token, slug); setPastes((p) => p.filter((x) => x.slug !== slug)); setStats((s) => s ? { ...s, total_pastes: Math.max(0, s.total_pastes - 1) } : s); } catch { setError(`Gagal menghapus paste "${slug}".`); } finally { setBusySlug(null); }
+    try { await deleteAdminPaste(token, slug); setPastes((p) => p.filter((x) => x.slug !== slug)); setStats((s) => s ? { ...s, total_pastes: Math.max(0, s.total_pastes - 1) } : s); } catch { setError(`Failed to delete paste "${slug}".`); } finally { setBusySlug(null); }
   };
 
   const handleDeleteFile = async (slug: string) => {
     if (!window.confirm(`Hapus file "${slug}"?`)) return;
     setBusySlug(slug);
-    try { await deleteAdminFile(token, slug); setFiles((f) => f.filter((x) => x.slug !== slug)); setStats((s) => s ? { ...s, total_files: Math.max(0, s.total_files - 1) } : s); } catch { setError(`Gagal menghapus file "${slug}".`); } finally { setBusySlug(null); }
+    try { await deleteAdminFile(token, slug); setFiles((f) => f.filter((x) => x.slug !== slug)); setStats((s) => s ? { ...s, total_files: Math.max(0, s.total_files - 1) } : s); } catch { setError(`Failed to delete file "${slug}".`); } finally { setBusySlug(null); }
   };
 
   const handleReportStatus = async (id: string, status: ReportStatus) => {
     setBusyReportId(id);
-    try { await updateAdminReportStatus(token, id, status); setReports((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r))); } catch { setError('Gagal memperbarui status laporan.'); } finally { setBusyReportId(null); }
+    try { await updateAdminReportStatus(token, id, status); setReports((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r))); } catch { setError('Failed to update report status.'); } finally { setBusyReportId(null); }
   };
 
   const handleDeleteReportedContent = async (id: string, resourceType: 'paste' | 'file', slug: string) => {
@@ -195,7 +195,7 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
     } finally { setBusyReportId(null); }
   };
 
-  const handleDeleteReport = async (id: string) => { if (!window.confirm('Hapus laporan ini?')) return; setBusyReportId(id); try { await deleteAdminReport(token, id); setReports((prev) => prev.filter((r) => r.id !== id)); } catch { setError('Gagal menghapus laporan.'); } finally { setBusyReportId(null); } };
+  const handleDeleteReport = async (id: string) => { if (!window.confirm('Delete this report?')) return; setBusyReportId(id); try { await deleteAdminReport(token, id); setReports((prev) => prev.filter((r) => r.id !== id)); } catch { setError('Failed to delete report.'); } finally { setBusyReportId(null); } };
 
   const handlePurge = async () => {
     if (!window.confirm('Bersihkan semua yang kadaluarsa?')) return;

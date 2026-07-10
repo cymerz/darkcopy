@@ -32,10 +32,10 @@ export function ReportButton({ resourceType, slug, compact }: ReportButtonProps)
     setState('submitting'); setMessage(null);
     try {
       const res = await submitReport({ resourceType, slug, reason, details });
-      setState('done'); setMessage(res.message || 'Laporan terkirim. Terima kasih.');
+      setState('done'); setMessage(res.message || 'Report submitted. Thank you.');
     } catch (err) {
       setState('error');
-      setMessage(err instanceof APIError ? (err.status === 429 ? 'Terlalu banyak laporan.' : err.message) : 'Gagal mengirim laporan.');
+      setMessage(err instanceof APIError ? (err.status === 429 ? 'Too many reports.' : err.message) : 'Failed to send report.');
     }
   };
 
@@ -76,7 +76,7 @@ export function ReportButton({ resourceType, slug, compact }: ReportButtonProps)
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-4">
-                <p className="text-xs font-mono text-on-surface-variant">BANTU KAMI MENJAGA PLATFORM TETAP AMAN. LAPORAN AKAN DITINJAU OLEH ADMIN.</p>
+                <p className="text-xs font-mono text-on-surface-variant">HELP US KEEP THE PLATFORM SAFE. REPORTS WILL BE REVIEWED BY THE ADMINISTRATORS.</p>
 
                 <div className="space-y-2">
                   <label htmlFor="report-reason" className="text-label-caps text-secondary">REASON</label>

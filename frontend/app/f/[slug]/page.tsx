@@ -49,7 +49,7 @@ function ExpiredFile() {
         <span aria-hidden="true" className="text-4xl text-tertiary font-mono">[!]</span>
         <div className="space-y-2">
           <h1 className="text-xl font-mono text-secondary uppercase tracking-wider">FILE EXPIRED</h1>
-          <p className="text-sm font-mono text-on-surface-variant">File ini telah kadaluarsa dan dihapus otomatis oleh sistem, sehingga tidak lagi tersedia untuk diunduh.</p>
+          <p className="text-sm font-mono text-on-surface-variant">File ini telah kadaluarsa dan dihapus otomatis oleh sistem, so it is no longer available untuk diunduh.</p>
         </div>
         <Link href="/" className="inline-flex min-h-[44px] items-center justify-center border-2 border-secondary text-secondary px-5 py-2.5 text-sm font-mono uppercase tracking-wider transition-all hover:bg-secondary hover:text-black">
           {'>'} BACK TO HOME
@@ -103,20 +103,20 @@ function FileInfo({ slug, metadata }: { slug: string; metadata: FileMetadata }) 
           {category === 'image' && (
             <div className="border-2 border-surface-variant bg-surface-container-lowest p-2 flex justify-center items-center group">
               <img src={previewHref} alt={filename}
-                className="relative z-[10000] max-h-[400px] w-auto max-w-full object-contain transition-all duration-500 grayscale hover:grayscale-0 group-hover:shadow-[0_0_30px_rgba(76,215,246,0.2)]" loading="lazy" />
+                className="relative max-h-[400px] w-auto max-w-full object-contain transition-all duration-500 grayscale hover:grayscale-0 group-hover:shadow-[0_0_30px_rgba(76,215,246,0.2)]" loading="lazy" />
             </div>
           )}
           {category === 'video' && (
             <div className="border-2 border-surface-variant bg-terminal-bg p-2">
-              <video src={previewHref} controls className="relative z-[10000] w-full max-h-[350px] object-contain" preload="metadata">
-                Browser Anda tidak mendukung preview video.
+              <video src={previewHref} controls className="relative w-full max-h-[350px] object-contain" preload="metadata">
+                Your browser does not support video preview.
               </video>
             </div>
           )}
           {category === 'audio' && (
             <div className="border-2 border-surface-variant bg-surface-container-lowest p-4">
-              <audio src={previewHref} controls className="relative z-[10000] w-full">
-                Browser Anda tidak mendukung preview audio.
+              <audio src={previewHref} controls className="relative w-full">
+                Your browser does not support audio preview.
               </audio>
             </div>
           )}
@@ -194,7 +194,7 @@ export default async function FileViewPage({ params }: { params: Promise<{ slug:
   try {
     response = await getFile(slug);
   } catch (error) {
-    console.error(`Gagal memuat file "${slug}":`, error);
+    console.error(`Failed to load file "${slug}":`, error);
     throw error;
   }
 
@@ -209,7 +209,7 @@ export default async function FileViewPage({ params }: { params: Promise<{ slug:
 
   const errorBody = await response.json().catch(() => null);
   throw new APIError(
-    errorBody?.error ?? `Gagal memuat file (HTTP ${response.status})`,
+    errorBody?.error ?? `Failed to load file (HTTP ${response.status})`,
     errorBody?.code ?? 'UNKNOWN',
     response.status,
   );

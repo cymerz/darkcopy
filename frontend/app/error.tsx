@@ -17,7 +17,7 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
         </span>
         <div className="space-y-2">
           <h1 className="text-lg font-mono text-secondary uppercase tracking-wider">ERROR: LOAD FAILED</h1>
-          <p className="text-sm font-mono text-on-surface-variant">Terjadi kesalahan saat memuat konten. Silakan coba lagi.</p>
+          <p className="text-sm font-mono text-on-surface-variant">An error occurred while loading content. Please try again.</p>
         </div>
         <button type="button" onClick={() => reset()}
           className="inline-flex min-h-[44px] items-center justify-center gap-2 border-2 border-secondary text-secondary px-5 py-2.5 text-sm font-mono uppercase tracking-wider transition-all hover:bg-secondary hover:text-black">

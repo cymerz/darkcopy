@@ -13,7 +13,7 @@ export default async function NewPastePage() {
     expiryOptions = data.expiryOptions;
     disableNewPastes = data.disable_new_pastes ?? false;
   } catch (error) {
-    console.error('Gagal memuat opsi pembuatan paste:', error);
+    console.error('Failed to load paste creation options:', error);
     throw error;
   }
 

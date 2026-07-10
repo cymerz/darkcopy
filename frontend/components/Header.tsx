@@ -11,9 +11,9 @@ interface NavLink {
 }
 
 const NAV_LINKS: NavLink[] = [
-  { href: '/', label: 'Beranda' },
-  { href: '/new', label: 'Buat Paste' },
-  { href: '/upload', label: 'Unggah File' },
+  { href: '/', label: 'Home' },
+  { href: '/new', label: 'Create Paste' },
+  { href: '/upload', label: 'Upload File' },
 ];
 
 function isActivePath(pathname: string | null, href: string): boolean {
@@ -38,7 +38,7 @@ export function Header() {
             href="/"
             onClick={closeMenu}
             className="flex min-h-[44px] items-center gap-2.5 group"
-            aria-label="DarkCopy beranda"
+            aria-label="DarkCopy home"
           >
             <span
               className="flex items-center justify-center w-9 h-9 rounded-sm bg-secondary text-background font-mono font-bold text-sm shadow-[0_0_10px_rgba(76,215,246,0.5)]"
@@ -54,7 +54,7 @@ export function Header() {
           {/* Desktop Navigation — absolutely centered */}
           <nav
             className="hidden md:flex items-center gap-1 absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
-            aria-label="Navigasi utama"
+            aria-label="Main navigation"
           >
             {NAV_LINKS.map((link) => {
               const active = isActivePath(pathname, link.href);
@@ -83,7 +83,7 @@ export function Header() {
               onClick={toggleMenu}
               aria-expanded={isMenuOpen}
               aria-controls="mobile-menu"
-              aria-label={isMenuOpen ? 'Tutup menu' : 'Buka menu'}
+              aria-label={isMenuOpen ? 'Close menu' : 'Open menu'}
               className="md:hidden inline-flex items-center justify-center w-11 h-11 rounded-sm text-on-surface-variant hover:text-secondary border border-surface-variant hover:border-secondary transition-colors"
             >
               <svg
@@ -124,7 +124,7 @@ export function Header() {
             : 'opacity-0 -translate-y-2 scale-y-95 pointer-events-none'
         }`}
       >
-        <nav className="flex flex-col px-4 sm:px-6 py-4 gap-1.5" aria-label="Navigasi mobile">
+        <nav className="flex flex-col px-4 sm:px-6 py-4 gap-1.5" aria-label="Mobile navigation">
           {NAV_LINKS.map((link) => {
             const active = isActivePath(pathname, link.href);
             return (

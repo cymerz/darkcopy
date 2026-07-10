@@ -35,7 +35,7 @@ export function GenerateLinkButton({ slug }: Props) {
       disabled={!url}
       className="flex min-h-[44px] w-full items-center justify-center gap-2 border-2 border-surface-variant text-on-surface-variant font-mono text-sm uppercase tracking-wider transition-all hover:border-secondary hover:text-secondary active:translate-y-[2px] disabled:cursor-not-allowed disabled:opacity-60"
     >
-      [ {copied ? 'COPIED!' : url ? 'GENERATE DIRECT LINK' : 'LOADING...'} ]
+      [ {copied ? 'COPIED!' : url ? 'COPY DIRECT LINK' : 'LOADING...'} ]
     </button>
   );
 }

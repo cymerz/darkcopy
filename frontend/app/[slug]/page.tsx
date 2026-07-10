@@ -16,8 +16,8 @@ export const dynamic = 'force-dynamic';
  * Kept inline (no shared component dependency) so this page can always render
  * the expired state even before the dedicated error components (task 13.x)
  * exist. Task 13.3 will refine the canonical expired page; the messaging here
- * mirrors Req 3.9 ("Paste Telah Kadaluarsa") and Req 7.2 (explanation that the
- * content was auto-deleted, plus a "Kembali ke Beranda" action).
+ * mirrors Req 3.9 ("Paste Expired") and Req 7.2 (explanation that the
+ * content was auto-deleted, plus a "Kembali ke Home" action).
  */
 function ExpiredPaste() {
   return (
@@ -48,11 +48,11 @@ function ExpiredPaste() {
 
         <div className="space-y-2">
           <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-            Paste Telah Kadaluarsa
+            Paste Expired
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Konten ini telah kadaluarsa dan dihapus otomatis oleh sistem,
-            sehingga tidak lagi tersedia.
+            This paste has expired and was automatically deleted by the system,
+            so it is no longer available.
           </p>
         </div>
 
@@ -60,7 +60,7 @@ function ExpiredPaste() {
           href="/"
           className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-hover focus-visible:ring-offset-2 focus-visible:ring-offset-dark-800"
         >
-          Kembali ke Beranda
+          Kembali ke Home
         </Link>
       </div>
     </div>
@@ -74,7 +74,7 @@ function ExpiredPaste() {
  * {@link PasteViewer}. Error handling maps backend HTTP statuses to the right
  * UX per the requirements:
  *
- * - 404 → `notFound()` renders the "Tidak Ditemukan" page (Req 3.8).
+ * - 404 → `notFound()` renders the "Not Found" page (Req 3.8).
  * - 410 → renders the inline expired view (Req 3.9).
  * - 401 → `redirect()` to the password gate `/${slug}/unlock` (Req 3.10). The
  *   API client throws {@link APIError} on non-2xx (discarding the body), so the

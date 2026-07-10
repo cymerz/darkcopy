@@ -8,7 +8,7 @@ export default async function UploadPage() {
   try {
     data = await getUploadOptions();
   } catch (error) {
-    console.error('Gagal memuat opsi unggah file:', error);
+    console.error('Failed to load file upload options:', error);
     throw error;
   }
 

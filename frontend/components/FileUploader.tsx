@@ -17,7 +17,7 @@ interface FileUploaderProps {
 type UploadStatus = 'idle' | 'uploading' | 'success' | 'error';
 
 const VISIBILITY_LABELS: Record<string, string> = {
-  public: 'PUBLIK',
+  public: 'PUBLIC',
   unlisted: 'UNLISTED',
   password_protected: 'PROTECTED',
 };

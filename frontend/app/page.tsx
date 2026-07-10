@@ -13,7 +13,7 @@ export default async function HomePage() {
     pastes = result.pastes ?? [];
     files = result.files ?? [];
   } catch (error) {
-    console.error('Gagal memuat daftar paste dan file:', error);
+    console.error('Failed to load paste and file list:', error);
     throw error;
   }
 
@@ -25,23 +25,23 @@ export default async function HomePage() {
           DARKCOPY
         </h1>
         <p className="text-body-md text-on-surface-variant font-mono">
-          [ BAGI TEKS & FILE SECARA ANONIM, AMAN, DAN INSTAN ]
+          [ SHARE TEXT & FILES ANONYMOUSLY, SECURELY, AND INSTANTLY ]
         </p>
         <p className="text-sm text-on-surface-variant font-mono max-w-xl mx-auto leading-relaxed">
-          Platform tanpa registrasi untuk membagikan paste terenkripsi dan file sementara dengan kadaluarsa otomatis & pengaman kata sandi.
+          A no-registration platform for sharing encrypted pastes and temporary files with automatic expiry & password protection.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
           <Link
             href="/new"
             className="inline-flex min-h-[44px] items-center justify-center gap-2.5 border-2 border-secondary text-secondary px-8 py-3 font-mono font-bold uppercase tracking-wider transition-all duration-200 hover:bg-secondary hover:text-black hover:shadow-[0_0_20px_rgba(76,215,246,0.4)] active:translate-y-[2px]"
           >
-            {'>'} BUAT PASTE
+            {'>'} CREATE PASTE
           </Link>
           <Link
             href="/upload"
             className="inline-flex min-h-[44px] items-center justify-center gap-2.5 border-2 border-hot-pink text-hot-pink px-8 py-3 font-mono font-bold uppercase tracking-wider transition-all duration-200 hover:bg-hot-pink hover:text-black hover:shadow-[0_0_20px_rgba(244,114,182,0.4)] active:translate-y-[2px]"
           >
-            {'>'} UNGGAH FILE
+            {'>'} UPLOAD FILE
           </Link>
         </div>
       </div>

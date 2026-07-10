@@ -66,7 +66,7 @@ export default function handler(req: IncomingMessage, res: ServerResponse) {
     res.writeHead(502, { 'Content-Type': 'application/json' });
     res.end(
       JSON.stringify({
-        error: 'Gagal menghubungi backend server',
+        error: 'Failed to connect to backend server',
         code: 'BACKEND_ERROR',
       })
     );

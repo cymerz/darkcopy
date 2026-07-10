@@ -13,11 +13,11 @@ export type GateEvent =
   | { type: 'RATE_LIMITED' } | { type: 'NOT_FOUND' } | { type: 'GONE' }
   | { type: 'ERROR'; message?: string } | { type: 'COOLDOWN_ELAPSED' };
 
-export const MSG_WRONG_PASSWORD = 'Kata sandi salah';
-export const MSG_RATE_LIMITED = 'Terlalu banyak percobaan. Silakan coba lagi nanti.';
-export const MSG_NOT_FOUND = 'Tidak ditemukan';
-export const MSG_GONE = 'Telah kadaluarsa';
-export const MSG_GENERIC = 'Terjadi kesalahan. Silakan coba lagi.';
+export const MSG_WRONG_PASSWORD = 'Incorrect password';
+export const MSG_RATE_LIMITED = 'Too many attempts. Please try again later.';
+export const MSG_NOT_FOUND = 'Not found';
+export const MSG_GONE = 'Expired';
+export const MSG_GENERIC = 'An error occurred. Please try again.';
 export const RATE_LIMIT_COOLDOWN_MS = 30000;
 export const initialGateState: GateState = { status: 'idle', errorMessage: null, contentUnlocked: false };
 export function isFormEnabled(status: GateStatus): boolean { return status === 'idle' || status === 'error'; }
@@ -122,7 +122,7 @@ export function PasswordGate({ slug, resourceType, onUnlock }: PasswordGateProps
         </div>
         <h1 className="mb-1 text-center font-mono text-lg text-secondary uppercase tracking-wider">{'>'} ACCESS_RESTRICTED.SYS</h1>
         <p className="mb-6 text-center text-xs font-mono text-on-surface-variant">
-          MASUKKAN KATA SANDI UNTUK {resourceType === 'file' ? 'MENGUNDUH FILE INI' : 'MELIHAT PASTE INI'}.
+          ENTER PASSWORD TO {resourceType === 'file' ? 'DOWNLOAD THIS FILE' : 'VIEW THIS PASTE'}.
         </p>
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div className="space-y-2">

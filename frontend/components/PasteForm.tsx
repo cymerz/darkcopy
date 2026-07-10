@@ -15,7 +15,7 @@ interface PasteFormProps {
 type Visibility = 'public' | 'unlisted' | 'password_protected';
 
 const VISIBILITY_OPTIONS: { value: Visibility; label: string }[] = [
-  { value: 'public', label: 'PUBLIK' },
+  { value: 'public', label: 'PUBLIC' },
   { value: 'unlisted', label: 'UNLISTED' },
   { value: 'password_protected', label: 'PROTECTED' },
 ];
@@ -84,10 +84,10 @@ export function PasteForm({ languages, expiryOptions, disabled }: PasteFormProps
 
       const result = await createPaste(formData);
       const slug = resolveSlug(result);
-      if (!slug) { setError('Gagal membuat paste. Silakan coba lagi.'); setIsSubmitting(false); return; }
+      if (!slug) { setError('Failed to create paste. Please try again.'); setIsSubmitting(false); return; }
       router.push(`/${slug}`);
     } catch (err) {
-      setError(err instanceof APIError ? err.message : 'Terjadi kesalahan saat membuat paste.');
+      setError(err instanceof APIError ? err.message : 'An error occurred while creating the paste.');
       setIsSubmitting(false);
     }
   };
@@ -167,7 +167,7 @@ export function PasteForm({ languages, expiryOptions, disabled }: PasteFormProps
             </span>
             <input type="text" id="custom_slug" name="custom_slug" value={customSlug}
               onChange={(e) => setCustomSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-              placeholder="slug-kustom" disabled={isFormDisabled}
+              placeholder="custom-slug" disabled={isFormDisabled}
               className="min-h-[44px] flex-1 bg-transparent px-3 py-2.5 text-sm text-on-surface placeholder-on-surface-variant font-mono focus:outline-none disabled:cursor-not-allowed" />
           </div>
           <p className="text-xs text-outline font-mono">Only lowercase letters, numbers, hyphens. Leave empty for auto-slug.</p>

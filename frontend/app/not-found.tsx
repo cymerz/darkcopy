@@ -8,15 +8,15 @@ import { ErrorDisplay } from '@/components/ErrorDisplay';
  * or file slug). This is a Server Component — it has no interactivity beyond a
  * navigational link, so it intentionally omits the `'use client'` directive.
  *
- * Per Req 7.1 it shows the title "Tidak Ditemukan", an illustrative icon, and a
- * "Kembali ke Beranda" action. The dark-themed presentation is provided by the
+ * Per Req 7.1 it shows the title "Not Found", an illustrative icon, and a
+ * "Kembali ke Home" action. The dark-themed presentation is provided by the
  * shared {@link ErrorDisplay} component (Req 7.5).
  */
 export default function NotFound() {
   return (
     <ErrorDisplay
-      title="Tidak Ditemukan"
-      message="Halaman atau konten yang Anda cari tidak ditemukan. Mungkin tautannya salah atau konten telah dihapus."
+      title="Not Found"
+      message="The page or content you are looking for was not found. The link may be incorrect or the content has been removed."
       icon={
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -33,7 +33,7 @@ export default function NotFound() {
           <line x1="8" y1="11" x2="14" y2="11" />
         </svg>
       }
-      action={{ label: 'Kembali ke Beranda', href: '/' }}
+      action={{ label: 'Kembali ke Home', href: '/' }}
     />
   );
 }
