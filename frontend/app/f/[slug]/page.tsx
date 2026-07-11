@@ -102,7 +102,7 @@ function FileInfo({ slug, metadata }: { slug: string; metadata: FileMetadata }) 
             <div className="flex items-center gap-1.5" aria-hidden="true">
               <span className="w-2.5 h-2.5 rounded-full bg-success-green animate-terminal-blink" />
             </div>
-            <h1 className="font-mono text-sm text-secondary uppercase tracking-wider">
+            <h1 className="font-mono text-sm text-secondary uppercase tracking-wider break-all">
               {'>'} FILE_INSPECTOR.SYS — {filename}
             </h1>
           </div>

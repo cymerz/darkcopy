@@ -38,7 +38,21 @@ export default function TosPage() {
           responsibility of the person who uploaded it.
         </p>
 
-        <h2 className="text-secondary text-base uppercase tracking-wider font-bold">5. LIMITATION OF LIABILITY</h2>
+        <h2 className="text-secondary text-base uppercase tracking-wider font-bold">5. TECHNICAL DATA, IP PROCESSING & RATE LIMITING</h2>
+        <p> To maintain platform stability, prevent abuse, and enforce system boundaries:</p>
+        <ul className="list-disc pl-6 space-y-1">
+          <li>Our systems process and temporarily log user IP addresses solely for technical operations, including rate limiting (preventing spam/DDoS), security monitoring, and filtering malicious traffic.</li>
+          <li>We do not use IP addresses for user tracking, profiling, or any form of personal identification.</li>
+          <li>We do not share IP addresses with third parties, except when legally required or to protect the integrity of our service.</li>
+          <li>Rate limiting is implemented to ensure fair usage and prevent abuse. Users exceeding the rate limit may experience temporary access restrictions.</li>
+        </ul>
+
+        <h2 className="text-secondary text-base uppercase tracking-wider font-bold">6. REPORTING ABUSE / DMCA TAKEDOWN REQUESTS</h2>
+        <p>
+          If you encounter any abusive content or behavior, please report it to us using the reporting tools available within the service.
+        </p>
+        
+        <h2 className="text-secondary text-base uppercase tracking-wider font-bold">7. LIMITATION OF LIABILITY</h2>
         <p>
           In no event shall DARKCOPY or its operators be liable for any damages arising from the
           use or inability to use the service.
