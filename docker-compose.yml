@@ -86,8 +86,32 @@ services:
       timeout: 5s
       retries: 5
 
+  # 5. PostgreSQL Backup Service (pg_dump sidecar)
+  db-backup:
+    image: prodrigestivill/postgres-backup-local:15-alpine
+    container_name: darkcopy-db-backup
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_USER: ${POSTGRES_USER:-example_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-example_password_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-example_db}
+      POSTGRES_PORT: 5432
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_MINS: 0
+      BACKUP_KEEP_DAYS: 7
+      BACKUP_KEEP_WEEKS: 0
+      BACKUP_KEEP_MONTHS: 0
+    volumes:
+      - db_backups:/var/opt/pgbackups
+
 volumes:
   postgres_data:
     driver: local
   uploads_data:
+    driver: local
+  db_backups:
     driver: local
