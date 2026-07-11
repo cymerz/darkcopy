@@ -188,6 +188,7 @@ export interface RegisterUploadedFilePayload {
   visibility: string;
   password?: string;
   expires_in?: string;
+  md5_hash?: string;
 }
 
 /**

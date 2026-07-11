@@ -217,9 +217,9 @@ func (r *FileRepo) WithRedis(rdb *redis.Client) *FileRepo {
 // InsertFile inserts a new file record into the database.
 func (r *FileRepo) InsertFile(ctx context.Context, f *paste.FileRecord) error {
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO files (id, slug, filename, mime_type, size_bytes, storage_key, visibility, password_hash, expires_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-	`, f.ID, f.Slug, f.Filename, f.MIMEType, f.SizeBytes, f.StorageKey, f.Visibility, nilIfEmpty(f.PasswordHash), f.ExpiresAt, f.CreatedAt)
+		INSERT INTO files (id, slug, filename, mime_type, size_bytes, storage_key, visibility, password_hash, expires_at, created_at, md5_hash, sha256_hash)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+	`, f.ID, f.Slug, f.Filename, f.MIMEType, f.SizeBytes, f.StorageKey, f.Visibility, nilIfEmpty(f.PasswordHash), f.ExpiresAt, f.CreatedAt, f.MD5Hash, f.SHA256Hash)
 	return err
 }
 
@@ -228,9 +228,9 @@ func (r *FileRepo) GetBySlug(ctx context.Context, slug string) (*paste.FileRecor
 	f := &paste.FileRecord{}
 	var passwordHash *string
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, slug, filename, mime_type, size_bytes, storage_key, visibility, password_hash, expires_at, created_at, downloads
+		SELECT id, slug, filename, mime_type, size_bytes, storage_key, visibility, password_hash, expires_at, created_at, downloads, md5_hash, sha256_hash
 		FROM files WHERE slug = $1
-	`, slug).Scan(&f.ID, &f.Slug, &f.Filename, &f.MIMEType, &f.SizeBytes, &f.StorageKey, &f.Visibility, &passwordHash, &f.ExpiresAt, &f.CreatedAt, &f.Downloads)
+	`, slug).Scan(&f.ID, &f.Slug, &f.Filename, &f.MIMEType, &f.SizeBytes, &f.StorageKey, &f.Visibility, &passwordHash, &f.ExpiresAt, &f.CreatedAt, &f.Downloads, &f.MD5Hash, &f.SHA256Hash)
 	if err != nil {
 		return nil, err
 	}

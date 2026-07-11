@@ -245,9 +245,10 @@ func (h *FileHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"success": true,
-		"slug":    record.Slug,
-		"url":     fmt.Sprintf("/f/%s", record.Slug),
+		"success":  true,
+		"slug":     record.Slug,
+		"url":      fmt.Sprintf("/f/%s", record.Slug),
+		"md5_hash": record.MD5Hash,
 	})
 }
 
@@ -304,6 +305,15 @@ func (h *FileHandler) GetFile(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", strconv.FormatInt(record.SizeBytes, 10))
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Downloads-Count", strconv.Itoa(record.Downloads))
+			if record.MD5Hash != "" {
+				w.Header().Set("X-File-MD5", record.MD5Hash)
+			}
+						if record.SHA256Hash != "" {
+				w.Header().Set("X-File-SHA256", record.SHA256Hash)
+			}
+				if record.ExpiresAt != nil {
+					w.Header().Set("X-File-Expires-At", record.ExpiresAt.Format(time.RFC3339))
+			}
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -661,6 +671,8 @@ type registerUploadedFileRequest struct {
 	Visibility string `json:"visibility"`
 	Password   string `json:"password"`
 	ExpiresIn  string `json:"expires_in"`
+	MD5Hash    string `json:"md5_hash"`
+	SHA256Hash string `json:"sha256_hash"`
 }
 
 // HandleRegisterUploadedFile commits the file metadata to database after direct upload completes.
@@ -714,6 +726,8 @@ func (h *FileHandler) HandleRegisterUploadedFile(w http.ResponseWriter, r *http.
 		Visibility: paste.Visibility(req.Visibility),
 		Password:   req.Password,
 		ExpiresIn:  expiresIn,
+		MD5Hash:    req.MD5Hash,
+		SHA256Hash: req.SHA256Hash,
 	}
 
 	record, err := h.fileService.RegisterUploadedFile(r.Context(), regReq)

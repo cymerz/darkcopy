@@ -6,6 +6,7 @@ import { APIError } from '@/lib/types';
 import { formatFileSize } from '@/lib/utils';
 import { ReportButton } from '@/components/ReportButton';
 import { GenerateLinkButton } from '@/components/GenerateLinkButton';
+import { CountdownTimer } from '@/components/CountdownTimer';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,9 @@ interface FileMetadata {
   mimeType: string | null;
   sizeBytes: number | null;
   downloads: number;
+  md5: string | null;
+  sha256: string | null;
+  remainingSeconds: number | null;
 }
 
 function parseContentDispositionFilename(header: string | null): string | null {
@@ -35,7 +39,16 @@ function readFileMetadata(response: Response, slug: string): FileMetadata {
   const sizeBytes = Number.isFinite(parsedSize) ? parsedSize : null;
   const downloadsHeader = response.headers.get('x-downloads-count');
   const downloads = downloadsHeader ? Number.parseInt(downloadsHeader, 10) : 0;
-  return { filename, mimeType, sizeBytes, downloads };
+  const md5 = response.headers.get('x-file-md5');
+  const sha256 = response.headers.get('x-file-sha256');
+  const expiresAtHeader = response.headers.get('x-file-expires-at');
+  let remainingSeconds: number | null = null;
+  if (expiresAtHeader) {
+    const expiresAt = new Date(expiresAtHeader);
+    const secs = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
+    remainingSeconds = Number.isFinite(secs) ? secs : null;
+  }
+  return { filename, mimeType, sizeBytes, downloads, md5, sha256, remainingSeconds };
 }
 
 function discardBody(response: Response): void {
@@ -144,8 +157,8 @@ function FileInfo({ slug, metadata }: { slug: string; metadata: FileMetadata }) 
           {/* Integrity hashes */}
           <div className="border-2 border-surface-variant bg-surface-container-lowest p-3">
             <p className="text-label-caps text-outline mb-1">INTEGRITY_CHECK</p>
-            <p className="text-xs font-mono text-on-surface-variant break-all">MD5: <span className="text-outline">—</span></p>
-            <p className="text-xs font-mono text-on-surface-variant break-all">SHA256: <span className="text-outline">—</span></p>
+            <p className="text-xs font-mono text-on-surface-variant break-all">MD5: <span className="text-outline">{metadata.md5 || '—'}</span></p>
+            <p className="text-xs font-mono text-on-surface-variant break-all">SHA256: <span className="text-outline">{metadata.sha256 || '—'}</span></p>
           </div>
         </div>
 
@@ -168,13 +181,16 @@ function FileInfo({ slug, metadata }: { slug: string; metadata: FileMetadata }) 
             </div>
           </div>
 
-          {/* Encryption badge */}
+          {/* Time Remaining Badge */}
           <div className="border-2 border-surface-variant bg-surface-container-lowest p-4">
-            <p className="text-label-caps text-outline">ENCRYPTION</p>
-            <div className="mt-2 h-2 border border-surface-variant bg-terminal-bg">
-              <div className="h-full w-full bg-success-green/60" style={{ width: '100%' }} />
-            </div>
-            <p className="text-xs font-mono text-success-green mt-1">AES-256 • END-TO-END</p>
+            <p className="text-label-caps text-outline mb-2">TIME_REMAINING</p>
+            {metadata.remainingSeconds != null ? (
+              <div className="flex">
+                <CountdownTimer remainingSeconds={metadata.remainingSeconds} />
+              </div>
+            ) : (
+              <p className="text-xs font-mono text-success-green">TTL: NEVER</p>
+            )}
           </div>
 
           {/* Report */}

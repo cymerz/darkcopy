@@ -116,6 +116,7 @@ export interface UploadResponse {
   success: boolean;
   slug: string;
   url: string;
+  md5_hash?: string;
 }
 
 /**

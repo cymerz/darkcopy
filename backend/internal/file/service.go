@@ -1,16 +1,20 @@
 package file
 
 import (
-	"sync"
 	"bufio"
 	"context"
+	"crypto/md5"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -163,10 +167,35 @@ func (s *Service) Upload(ctx context.Context, req paste.UploadFileRequest) (*pas
 	// Build storage key: uploads/{slug}/{filename}
 	storageKey := fmt.Sprintf("uploads/%s/%s", slug, filename)
 
+	// Setup a temporary file to calculate hashes and support seeking for S3 client signing
+	tmpFile, err := os.CreateTemp("", "darkcopy-upload-*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer func() {
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+	}()
+
+	md5Hasher := md5.New()
+	sha256Hasher := sha256.New()
+	mw := io.MultiWriter(tmpFile, md5Hasher, sha256Hasher)
+
+	if _, err := io.Copy(mw, req.Reader); err != nil {
+		return nil, fmt.Errorf("failed to write temp file: %w", err)
+	}
+
+	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("failed to seek temp file: %w", err)
+	}
+
 	// Save file to disk.
-	if err := s.storage.Save(ctx, storageKey, req.Reader); err != nil {
+	if err := s.storage.Save(ctx, storageKey, tmpFile); err != nil {
 		return nil, err
 	}
+
+	md5Hash := hex.EncodeToString(md5Hasher.Sum(nil))
+	sha256Hash := hex.EncodeToString(sha256Hasher.Sum(nil))
 
 	now := s.now()
 
@@ -194,6 +223,8 @@ func (s *Service) Upload(ctx context.Context, req paste.UploadFileRequest) (*pas
 		PasswordHash: passwordHash,
 		ExpiresAt:    expiresAt,
 		CreatedAt:    now,
+		MD5Hash:      md5Hash,
+		SHA256Hash:   sha256Hash,
 	}
 
 	if err := s.repo.InsertFile(ctx, record); err != nil {
@@ -269,6 +300,15 @@ func (s *Service) ServeFile(ctx context.Context, slug string, w http.ResponseWri
 	w.Header().Set("Content-Type", record.MIMEType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Downloads-Count", strconv.Itoa(record.Downloads))
+	if record.MD5Hash != "" {
+		w.Header().Set("X-File-MD5", record.MD5Hash)
+	}
+	if record.SHA256Hash != "" {
+		w.Header().Set("X-File-SHA256", record.SHA256Hash)
+	}
+	if record.ExpiresAt != nil {
+		w.Header().Set("X-File-Expires-At", record.ExpiresAt.Format(time.RFC3339))
+	}
 
 	// Enable seeking in browser video players by announcing byte-range support.
 	w.Header().Set("Accept-Ranges", "bytes")
@@ -482,6 +522,8 @@ func (s *Service) RegisterUploadedFile(ctx context.Context, req paste.RegisterFi
 		PasswordHash: passwordHash,
 		ExpiresAt:    expiresAt,
 		CreatedAt:    now,
+		MD5Hash:      req.MD5Hash,
+		SHA256Hash:   req.SHA256Hash,
 	}
 
 	if err := s.repo.InsertFile(ctx, record); err != nil {
@@ -495,7 +537,7 @@ func (s *Service) RegisterUploadedFile(ctx context.Context, req paste.RegisterFi
 func sanitizeFilename(filename string) string {
 	// Convert backslashes to forward slashes
 	filename = strings.ReplaceAll(filename, "\\", "/")
-	
+
 	// Remove all ".." to prevent any directory traversal
 	for strings.Contains(filename, "..") {
 		filename = strings.ReplaceAll(filename, "..", "")

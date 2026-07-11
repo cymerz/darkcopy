@@ -113,6 +113,13 @@ func TestUpload_ValidPublicFile(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	if record.MD5Hash != "f128de045111ca2c311638161c42327d" {
+		t.Errorf("expected MD5 f128de045111ca2c311638161c42327d, got %s", record.MD5Hash)
+	}
+	if record.SHA256Hash != "7d594931e105664087bbb65fb6ba5358fdcb5636e4c8415583313d34a448144b" {
+		t.Errorf("expected SHA256 7d594931e105664087bbb65fb6ba5358fdcb5636e4c8415583313d34a448144b, got %s", record.SHA256Hash)
+	}
+
 	if record.Slug != "abc12345" {
 		t.Errorf("expected slug abc12345, got %s", record.Slug)
 	}

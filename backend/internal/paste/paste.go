@@ -77,6 +77,8 @@ type FileRecord struct {
 	ExpiresAt    *time.Time
 	CreatedAt    time.Time
 	Downloads    int
+	MD5Hash      string
+	SHA256Hash   string
 }
 
 
@@ -101,6 +103,8 @@ type RegisterFileRequest struct {
 	Visibility Visibility
 	Password   string
 	ExpiresIn  time.Duration
+	MD5Hash    string
+	SHA256Hash string
 }
 
 // ExpiryOption represents a selectable expiry duration.
