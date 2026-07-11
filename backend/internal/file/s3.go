@@ -141,20 +141,22 @@ func (s *S3Storage) Head(ctx context.Context, storageKey string) error {
 	return nil
 }
 
-// PresignURL generates a secure, temporary pre-signed URL for the given storage key,
-// allowing direct download or inline display from the S3 provider.
-func (s *S3Storage) PresignURL(ctx context.Context, storageKey string, expires time.Duration, inline bool) (string, error) {
-	if s.isPublic {
-		var publicURL string
-		if s.customDomain != "" {
-			parts := strings.SplitN(s.customDomain, "/", 2)
-			host := parts[0]
-			path := "/" + s.bucket + "/" + storageKey
-			if len(parts) > 1 {
-				subpath := strings.Trim(parts[1], "/")
-				path = "/" + subpath + path
-			}
-			publicURL = "https://" + host + path
+	// PresignURL generates a secure, temporary pre-signed URL for the given storage key,
+	// allowing direct download or inline display from the S3 provider.
+	func (s *S3Storage) PresignURL(ctx context.Context, storageKey string, expires time.Duration, inline bool) (string, error) {
+		if s.isPublic {
+			var publicURL string
+			if s.customDomain != "" {
+				parts := strings.SplitN(s.customDomain, "/", 2)
+				host := parts[0]
+				var path string
+				if len(parts) > 1 {
+					subpath := strings.Trim(parts[1], "/")
+					path = "/" + subpath + "/" + s.bucket + "/" + storageKey
+				} else {
+					path = "/" + storageKey
+				}
+				publicURL = "https://" + host + path
 		} else {
 			baseEndpoint := ""
 			if s.client.Options().BaseEndpoint != nil {
