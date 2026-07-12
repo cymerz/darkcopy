@@ -354,6 +354,13 @@ func (h *FileHandler) DirectDownload(w http.ResponseWriter, r *http.Request) {
 
 	inline := r.URL.Query().Get("preview") == "true" || r.URL.Query().Get("inline") == "true"
 
+	// SECURITY: Force attachment for dangerous MIME types even on direct/CDN path
+	// to prevent stored XSS via inline HTML/SVG/JS rendering.
+	mimeNormalized := strings.ToLower(strings.TrimSpace(record.MIMEType))
+	if file.IsDangerousMIME(mimeNormalized) {
+		inline = false
+	}
+
 	presignedURL, err := h.fileService.PresignDownloadURL(r.Context(), slug, inline)
 	if err != nil {
 		// Fallback: presigning failed (local storage, S3 error, etc.).

@@ -83,12 +83,21 @@ func (s *S3Storage) Save(ctx context.Context, storageKey string, reader io.Reade
 		contentType = "application/octet-stream"
 	}
 
-	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+	input := &s3.PutObjectInput{
 		Bucket:      aws.String(s.bucket),
 		Key:         aws.String(storageKey),
 		Body:        reader,
 		ContentType: aws.String(contentType),
-	})
+	}
+
+	// SECURITY: Force attachment disposition on S3 object for dangerous MIME types.
+	// Defense-in-depth: even if accessed directly via CDN URL, browser won't render inline.
+	if dangerousMIMETypes[strings.ToLower(strings.TrimSpace(contentType))] {
+		filename := filepath.Base(storageKey)
+		input.ContentDisposition = aws.String(fmt.Sprintf(`attachment; filename="%s"`, filename))
+	}
+
+	_, err := s.client.PutObject(ctx, input)
 	if err != nil {
 		return fmt.Errorf("s3 storage: failed to put object %s: %w", storageKey, err)
 	}
@@ -251,6 +260,13 @@ func (s *S3Storage) PresignUploadURL(ctx context.Context, storageKey string, exp
 		Key:         aws.String(storageKey),
 		ContentType: aws.String(contentType),
 	}
+
+	// SECURITY: Force attachment disposition on S3 object for dangerous MIME types.
+	if dangerousMIMETypes[strings.ToLower(strings.TrimSpace(contentType))] {
+		filename := filepath.Base(storageKey)
+		input.ContentDisposition = aws.String(fmt.Sprintf(`attachment; filename="%s"`, filename))
+	}
+
 	presignedReq, err := presignClient.PresignPutObject(ctx, input, s3.WithPresignExpires(expires))
 	if err != nil {
 		return "", fmt.Errorf("s3 storage: failed to presign put object %s: %w", storageKey, err)
