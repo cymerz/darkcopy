@@ -302,27 +302,33 @@ func main() {
 	// Setup chi router.
 	r := chi.NewRouter()
 	r.Use(RealIPMiddleware)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
 
-	// Register routes.
+	// Register healthcheck endpoint without logger middleware to avoid log spamming.
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))
 	})
-	handler.RegisterPasteRoutes(r, pasteHandler)
-	handler.RegisterFileRoutes(r, fileHandler)
-	handler.RegisterReportRoutes(r, reportHandler)
-	handler.RegisterAdminRoutes(r, adminHandler)
+
+	// Group routes that require logging, metrics, and recovery.
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.Logger)
+		r.Use(middleware.Recoverer)
+
+		handler.RegisterPasteRoutes(r, pasteHandler)
+		handler.RegisterFileRoutes(r, fileHandler)
+		handler.RegisterReportRoutes(r, reportHandler)
+		handler.RegisterAdminRoutes(r, adminHandler)
+
+		// Serve static files.
+		r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
+	})
+
 	if adminToken == "" {
 		logger.Warn("ADMIN_TOKEN not set — admin API is disabled")
 	} else {
 		logger.Info("admin API enabled")
 	}
-
-	// Serve static files.
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 
 	// Start ExpiryManager background goroutine.
 	expiryMgr.Start(ctx)
