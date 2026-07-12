@@ -169,12 +169,12 @@ describe('apiFetch - Property 4: API Error Propagation', () => {
   // ---------------------------------------------------------------------------
   describe('concrete error status codes', () => {
     const cases: Array<{ status: number; code: string; message: string }> = [
-      { status: 400, code: 'BAD_REQUEST', message: 'Form tidak valid' },
-      { status: 401, code: 'PASSWORD_REQUIRED', message: 'Password diperlukan' },
-      { status: 404, code: 'NOT_FOUND', message: 'Paste tidak ditemukan' },
-      { status: 410, code: 'RESOURCE_EXPIRED', message: 'Paste ini telah kadaluarsa' },
-      { status: 429, code: 'RATE_LIMITED', message: 'Terlalu banyak percobaan' },
-      { status: 500, code: 'INTERNAL_ERROR', message: 'Gagal memuat paste' },
+      { status: 400, code: 'BAD_REQUEST', message: 'Invalid form' },
+      { status: 401, code: 'PASSWORD_REQUIRED', message: 'Password required' },
+      { status: 404, code: 'NOT_FOUND', message: 'Paste not found' },
+      { status: 410, code: 'RESOURCE_EXPIRED', message: 'This paste has expired' },
+      { status: 429, code: 'RATE_LIMITED', message: 'Too many attempts' },
+      { status: 500, code: 'INTERNAL_ERROR', message: 'Failed to load paste' },
     ];
 
     test.each(cases)(

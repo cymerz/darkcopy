@@ -19,15 +19,15 @@ const MAX_SECONDS = 400 * SECONDS_PER_DAY; // ~400 days, comfortably within int3
  * as the real age grows across bucket boundaries.
  */
 function relativeAgeRank(output: string): number {
-  if (output === 'baru saja') return 0;
+  if (output === 'just now') return 0;
   let m: RegExpMatchArray | null;
-  if ((m = output.match(/^(\d+) menit yang lalu$/))) {
+  if ((m = output.match(/^(\d+) minutes ago$/))) {
     return parseInt(m[1], 10) * SECONDS_PER_MINUTE;
   }
-  if ((m = output.match(/^(\d+) jam yang lalu$/))) {
+  if ((m = output.match(/^(\d+) hours ago$/))) {
     return parseInt(m[1], 10) * SECONDS_PER_HOUR;
   }
-  if ((m = output.match(/^(\d+) hari yang lalu$/))) {
+  if ((m = output.match(/^(\d+) days ago$/))) {
     return parseInt(m[1], 10) * SECONDS_PER_DAY;
   }
   // Fallback bucket: a locale date string for ages >= 30 days. All such ages
@@ -39,9 +39,9 @@ function relativeAgeRank(output: string): number {
 function parseRemainingSeconds(output: string): number {
   let total = 0;
   let m: RegExpMatchArray | null;
-  if ((m = output.match(/(\d+) hari/))) total += parseInt(m[1], 10) * SECONDS_PER_DAY;
-  if ((m = output.match(/(\d+) jam/))) total += parseInt(m[1], 10) * SECONDS_PER_HOUR;
-  if ((m = output.match(/(\d+) menit/))) total += parseInt(m[1], 10) * SECONDS_PER_MINUTE;
+  if ((m = output.match(/(\d+) day/))) total += parseInt(m[1], 10) * SECONDS_PER_DAY;
+  if ((m = output.match(/(\d+) hour/))) total += parseInt(m[1], 10) * SECONDS_PER_HOUR;
+  if ((m = output.match(/(\d+) minute/))) total += parseInt(m[1], 10) * SECONDS_PER_MINUTE;
   return total;
 }
 
@@ -88,13 +88,13 @@ describe('formatRelativeTime - Property 1: Relative Time Formatting Monotonicity
 
 describe('formatRemainingTime - Property 2: Remaining Time Formatting Completeness', () => {
   // Validates: Requirements 3.2, 3.6
-  it('positive seconds produce a non-empty string ending with "tersisa" reconstructible within 60s', () => {
+  it('positive seconds produce a non-empty string ending with "remaining" reconstructible within 60s', () => {
     fc.assert(
       fc.property(fc.integer({ min: 1, max: MAX_SECONDS }), (seconds) => {
         const out = formatRemainingTime(seconds);
 
         expect(out.length).toBeGreaterThan(0);
-        expect(out.endsWith('tersisa')).toBe(true);
+        expect(out.endsWith('remaining')).toBe(true);
 
         const reconstructed = parseRemainingSeconds(out);
         expect(Math.abs(reconstructed - seconds)).toBeLessThanOrEqual(60);
@@ -103,10 +103,10 @@ describe('formatRemainingTime - Property 2: Remaining Time Formatting Completene
   });
 
   // Validates: Requirements 3.2, 3.6
-  it('non-positive seconds always return "Kadaluarsa"', () => {
+  it('non-positive seconds always return "Expired"', () => {
     fc.assert(
       fc.property(fc.integer({ min: -MAX_SECONDS, max: 0 }), (seconds) => {
-        expect(formatRemainingTime(seconds)).toBe('Kadaluarsa');
+        expect(formatRemainingTime(seconds)).toBe('Expired');
       })
     );
   });
@@ -150,10 +150,10 @@ describe('formatFileSize - Property 3: File Size Formatting Consistency', () => 
 describe('utility functions - unit tests', () => {
   it('formatRemainingTime composes non-zero day/hour/minute components', () => {
     expect(formatRemainingTime(SECONDS_PER_DAY + SECONDS_PER_HOUR + SECONDS_PER_MINUTE)).toBe(
-      '1 hari 1 jam 1 menit tersisa'
+      '1 day 1 hour 1 minute remaining'
     );
-    expect(formatRemainingTime(0)).toBe('Kadaluarsa');
-    expect(formatRemainingTime(-10)).toBe('Kadaluarsa');
+    expect(formatRemainingTime(0)).toBe('Expired');
+    expect(formatRemainingTime(-10)).toBe('Expired');
   });
 
   it('formatFileSize uses the expected unit thresholds', () => {

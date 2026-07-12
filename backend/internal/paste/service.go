@@ -23,13 +23,13 @@ const NeverExpires = time.Duration(-1)
 
 // Errors returned by the paste service.
 var (
-	ErrEmptyContent     = errors.New("Konten paste tidak boleh kosong")
-	ErrContentTooLarge  = errors.New("Ukuran konten melebihi batas maksimum 10 MB")
-	ErrPasswordRequired = errors.New("Kata sandi wajib diisi untuk visibilitas ini")
-	ErrSlugTaken        = errors.New("Slug sudah digunakan, pilih yang lain")
-	ErrSlugInvalid      = errors.New("Slug hanya boleh mengandung huruf, angka, dan tanda hubung")
-	ErrNotFound         = errors.New("paste tidak ditemukan")
-	ErrExpired          = errors.New("Paste ini telah kadaluarsa")
+	ErrEmptyContent     = errors.New("Paste content must not be empty")
+	ErrContentTooLarge  = errors.New("Content size exceeds maximum limit of 10 MB")
+	ErrPasswordRequired = errors.New("Password is required for this visibility")
+	ErrSlugTaken        = errors.New("Slug already in use, choose another")
+	ErrSlugInvalid      = errors.New("Slug may only contain letters, digits, and hyphens")
+	ErrNotFound         = errors.New("Paste not found")
+	ErrExpired          = errors.New("This paste has expired")
 )
 
 // PasteRepository defines the interface for paste persistence operations.

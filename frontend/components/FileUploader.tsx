@@ -22,7 +22,7 @@ const VISIBILITY_LABELS: Record<string, string> = {
   password_protected: 'PROTECTED',
 };
 
-function visibilityLabel(value: string): string {
+export function visibilityLabel(value: string): string {
   return VISIBILITY_LABELS[value] ?? value.toUpperCase();
 }
 

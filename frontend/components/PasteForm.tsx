@@ -124,6 +124,7 @@ export function PasteForm({ languages, expiryOptions, disabled }: PasteFormProps
           <textarea
             id="content"
             name="content"
+            aria-label="CONTENT"
             required
             value={content}
             onChange={(e) => setContent(e.target.value)}

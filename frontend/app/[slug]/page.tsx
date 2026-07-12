@@ -60,7 +60,7 @@ function ExpiredPaste() {
           href="/"
           className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-hover focus-visible:ring-offset-2 focus-visible:ring-offset-dark-800"
         >
-          Kembali ke Home
+          Back to Home
         </Link>
       </div>
     </div>

@@ -198,13 +198,13 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
   const handleDeleteReport = async (id: string) => { if (!window.confirm('Delete this report?')) return; setBusyReportId(id); try { await deleteAdminReport(token, id); setReports((prev) => prev.filter((r) => r.id !== id)); } catch { setError('Failed to delete report.'); } finally { setBusyReportId(null); } };
 
   const handlePurge = async () => {
-    if (!window.confirm('Bersihkan semua yang kadaluarsa?')) return;
+    if (!window.confirm('Purge all expired items?')) return;
     setPurging(true); setError(null); setNotice(null);
     try {
       const { deleted } = await purgeExpired(token);
-      setNotice(deleted > 0 ? `${deleted} item kadaluarsa telah dibersihkan.` : 'Tidak ada item kadaluarsa.');
+      setNotice(deleted > 0 ? `${deleted} expired items have been purged.` : 'No expired items found.');
       reload();
-    } catch (err) { if (err instanceof APIError && (err.status === 401 || err.status === 404)) { onLogout(); return; } setError('Gagal membersihkan.'); } finally { setPurging(false); }
+    } catch (err) { if (err instanceof APIError && (err.status === 401 || err.status === 404)) { onLogout(); return; } setError('Failed to purge.'); } finally { setPurging(false); }
   };
 
   return (

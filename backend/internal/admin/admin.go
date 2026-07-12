@@ -13,10 +13,10 @@ import (
 )
 
 // ErrNotFound is returned when the requested item does not exist.
-var ErrNotFound = errors.New("item tidak ditemukan")
+var ErrNotFound = errors.New("Item not found")
 
 // ErrPurgeUnavailable is returned by PurgeExpired when no purger is configured.
-var ErrPurgeUnavailable = errors.New("pembersihan kadaluarsa tidak tersedia")
+var ErrPurgeUnavailable = errors.New("expired purge not available")
 
 // PasteItem is an admin-facing view of a paste. Unlike paste.PasteSummary it
 // includes the visibility and a password flag so an administrator can see every

@@ -62,7 +62,7 @@ function ExpiredFile() {
         <span aria-hidden="true" className="text-4xl text-tertiary font-mono">[!]</span>
         <div className="space-y-2">
           <h1 className="text-xl font-mono text-secondary uppercase tracking-wider">FILE EXPIRED</h1>
-          <p className="text-sm font-mono text-on-surface-variant">File ini telah kadaluarsa dan dihapus otomatis oleh sistem, so it is no longer available untuk diunduh.</p>
+          <p className="text-sm font-mono text-on-surface-variant">This file has expired and was automatically deleted by the system, so it is no longer available for download.</p>
         </div>
         <Link href="/" className="inline-flex min-h-[44px] items-center justify-center border-2 border-secondary text-secondary px-5 py-2.5 text-sm font-mono uppercase tracking-wider transition-all hover:bg-secondary hover:text-black">
           {'>'} BACK TO HOME

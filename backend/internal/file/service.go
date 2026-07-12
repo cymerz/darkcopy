@@ -46,12 +46,12 @@ var ErrPresignUnsupported = errors.New("storage backend does not support presign
 
 // Errors returned by the file service.
 var (
-	ErrFileTooLarge     = errors.New("Ukuran file melebihi batas maksimum 100 MB")
-	ErrPasswordRequired = errors.New("Kata sandi wajib diisi untuk visibilitas ini")
-	ErrNotFound         = errors.New("file tidak ditemukan")
-	ErrExpired          = errors.New("File ini telah kadaluarsa")
-	ErrInvalidSlug      = errors.New("Format slug tidak valid")
-	ErrDangerousFileType = errors.New("Tipe file ini tidak diizinkan untuk diunggah. Gunakan fitur paste sebagai gantinya")
+	ErrFileTooLarge     = errors.New("File size exceeds maximum limit of 100 MB")
+	ErrPasswordRequired = errors.New("Password is required for this visibility")
+	ErrNotFound         = errors.New("File not found")
+	ErrExpired          = errors.New("This file has expired")
+	ErrInvalidSlug      = errors.New("Invalid slug format")
+	ErrDangerousFileType = errors.New("This file type is not allowed for upload. Use the paste feature instead")
 )
 
 // dangerousMIMETypes contains MIME types that must never be served inline
@@ -491,7 +491,7 @@ func (s *Service) RegisterUploadedFile(ctx context.Context, req paste.RegisterFi
 
 	// 1. Verify file exists in storage.
 	if err := s.storage.Head(ctx, expectedStorageKey); err != nil {
-		return nil, fmt.Errorf("file tidak ditemukan di storage: %w", err)
+		return nil, fmt.Errorf("file not found in storage: %w", err)
 	}
 
 	// 2. Validate password is required for password_protected visibility.

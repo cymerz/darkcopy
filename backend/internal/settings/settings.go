@@ -71,31 +71,31 @@ func Defaults() Settings {
 		MaxFileSizeBytes:  100 * 1024 * 1024, // 100 MB
 		UseDirectUpload:   false,
 		PasteExpiryOptions: []ExpiryOption{
-			{Label: "1 Jam", Minutes: 60},
-			{Label: "6 Jam", Minutes: 360},
-			{Label: "24 Jam", Minutes: 1440},
-			{Label: "7 Hari", Minutes: 10080},
-			{Label: "30 Hari", Minutes: 43200},
-			{Label: "Selamanya", Minutes: 0},
+			{Label: "1 Hour", Minutes: 60},
+			{Label: "6 Hours", Minutes: 360},
+			{Label: "24 Hours", Minutes: 1440},
+			{Label: "7 Days", Minutes: 10080},
+			{Label: "30 Days", Minutes: 43200},
+			{Label: "Forever", Minutes: 0},
 		},
 		FileExpiryOptions: []ExpiryOption{
-			{Label: "1 Jam", Minutes: 60},
-			{Label: "6 Jam", Minutes: 360},
-			{Label: "24 Jam", Minutes: 1440},
-			{Label: "7 Hari", Minutes: 10080},
-			{Label: "30 Hari", Minutes: 43200},
+			{Label: "1 Hour", Minutes: 60},
+			{Label: "6 Hours", Minutes: 360},
+			{Label: "24 Hours", Minutes: 1440},
+			{Label: "7 Days", Minutes: 10080},
+			{Label: "30 Days", Minutes: 43200},
 		},
 	}
 }
 
 // Validation errors.
 var (
-	ErrInvalidPasteSize   = errors.New("ukuran paste maksimum tidak valid")
-	ErrInvalidFileSize    = errors.New("ukuran file maksimum tidak valid")
-	ErrNoExpiryOptions    = errors.New("minimal satu pilihan waktu kadaluarsa diperlukan")
-	ErrTooManyExpiry      = fmt.Errorf("terlalu banyak pilihan waktu kadaluarsa (maks %d)", MaxExpiryOptions)
-	ErrInvalidExpiry      = errors.New("pilihan waktu kadaluarsa tidak valid")
-	ErrInvalidDailyLimit  = errors.New("batas harian tidak valid")
+	ErrInvalidPasteSize   = errors.New("Invalid maximum paste size")
+	ErrInvalidFileSize    = errors.New("Invalid maximum file size")
+	ErrNoExpiryOptions    = errors.New("at least one expiration time option is required")
+	ErrTooManyExpiry      = fmt.Errorf("too many expiration time options (max %d)", MaxExpiryOptions)
+	ErrInvalidExpiry      = errors.New("Invalid expiration time option")
+	ErrInvalidDailyLimit  = errors.New("Invalid daily limit")
 )
 
 // Validate checks the settings for consistency and safe bounds. It returns a
@@ -120,10 +120,10 @@ func (s Settings) Validate() error {
 		return ErrInvalidDailyLimit
 	}
 	if s.MaxDailyUploadBytes < 0 {
-		return errors.New("batas ukuran upload harian global tidak boleh negatif")
+		return errors.New("global daily upload size limit must not be negative")
 	}
 	if s.MaxDailyUploadBytesPerIP < 0 {
-		return errors.New("batas ukuran upload harian per IP tidak boleh negatif")
+		return errors.New("per-IP daily upload size limit must not be negative")
 	}
 	return nil
 }

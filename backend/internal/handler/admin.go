@@ -102,7 +102,7 @@ func (h *AdminHandler) requireToken(next http.Handler) http.Handler {
 		}
 
 		if subtle.ConstantTimeCompare([]byte(provided), []byte(h.token)) != 1 {
-			writeJSONError(w, http.StatusUnauthorized, "Token admin tidak valid", "ADMIN_UNAUTHORIZED")
+			writeJSONError(w, http.StatusUnauthorized, "Invalid admin token", "ADMIN_UNAUTHORIZED")
 			return
 		}
 
@@ -114,7 +114,7 @@ func (h *AdminHandler) requireToken(next http.Handler) http.Handler {
 func (h *AdminHandler) HandleStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.adminService.Stats(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "Gagal memuat statistik", "INTERNAL_ERROR")
+		writeJSONError(w, http.StatusInternalServerError, "Failed to load statistics", "INTERNAL_ERROR")
 		return
 	}
 
@@ -143,12 +143,12 @@ func (h *AdminHandler) HandlePurgeExpired(w http.ResponseWriter, r *http.Request
 	deleted, err := h.adminService.PurgeExpired(r.Context())
 	if err != nil {
 		if errors.Is(err, admin.ErrPurgeUnavailable) {
-			writeJSONError(w, http.StatusServiceUnavailable, "Pembersihan kadaluarsa tidak tersedia", "PURGE_UNAVAILABLE")
+			writeJSONError(w, http.StatusServiceUnavailable, "Expired purge not available", "PURGE_UNAVAILABLE")
 			return
 		}
 		// Some items may have been removed before the error; report the failure
 		// but the client can refresh to see partial progress.
-		writeJSONError(w, http.StatusInternalServerError, "Gagal membersihkan item kadaluarsa", "INTERNAL_ERROR")
+		writeJSONError(w, http.StatusInternalServerError, "Failed to clean expired items", "INTERNAL_ERROR")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "deleted": deleted})
@@ -157,7 +157,7 @@ func (h *AdminHandler) HandlePurgeExpired(w http.ResponseWriter, r *http.Request
 // HandleGetSettings returns the current runtime settings.
 func (h *AdminHandler) HandleGetSettings(w http.ResponseWriter, r *http.Request) {
 	if h.settings == nil {
-		writeJSONError(w, http.StatusServiceUnavailable, "Pengaturan tidak tersedia", "SETTINGS_UNAVAILABLE")
+		writeJSONError(w, http.StatusServiceUnavailable, "Settings not available", "SETTINGS_UNAVAILABLE")
 		return
 	}
 	writeJSON(w, http.StatusOK, h.settings.Get())
@@ -166,18 +166,18 @@ func (h *AdminHandler) HandleGetSettings(w http.ResponseWriter, r *http.Request)
 // HandleUpdateSettings validates and applies a full settings update.
 func (h *AdminHandler) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if h.settings == nil {
-		writeJSONError(w, http.StatusServiceUnavailable, "Pengaturan tidak tersedia", "SETTINGS_UNAVAILABLE")
+		writeJSONError(w, http.StatusServiceUnavailable, "Settings not available", "SETTINGS_UNAVAILABLE")
 		return
 	}
 
 	var s settings.Settings
 	if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "Body permintaan tidak valid", "BAD_REQUEST")
+		writeJSONError(w, http.StatusBadRequest, "Invalid request body", "BAD_REQUEST")
 		return
 	}
 
 	if err := h.settings.Update(r.Context(), s); err != nil {
-		// Validation errors carry a user-facing Indonesian message.
+		// Validation errors carry a user-facing message.
 		if errors.Is(err, settings.ErrInvalidPasteSize) ||
 			errors.Is(err, settings.ErrInvalidFileSize) ||
 			errors.Is(err, settings.ErrNoExpiryOptions) ||
@@ -187,7 +187,7 @@ func (h *AdminHandler) HandleUpdateSettings(w http.ResponseWriter, r *http.Reque
 			writeJSONError(w, http.StatusBadRequest, err.Error(), "VALIDATION_ERROR")
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "Gagal menyimpan pengaturan", "INTERNAL_ERROR")
+		writeJSONError(w, http.StatusInternalServerError, "Failed to save settings", "INTERNAL_ERROR")
 		return
 	}
 
@@ -197,7 +197,7 @@ func (h *AdminHandler) HandleUpdateSettings(w http.ResponseWriter, r *http.Reque
 // HandleListReports returns reports, optionally filtered by ?status=.
 func (h *AdminHandler) HandleListReports(w http.ResponseWriter, r *http.Request) {
 	if h.reports == nil {
-		writeJSONError(w, http.StatusServiceUnavailable, "Laporan tidak tersedia", "REPORTS_UNAVAILABLE")
+		writeJSONError(w, http.StatusServiceUnavailable, "Reports not available", "REPORTS_UNAVAILABLE")
 		return
 	}
 
@@ -206,7 +206,7 @@ func (h *AdminHandler) HandleListReports(w http.ResponseWriter, r *http.Request)
 
 	reports, err := h.reports.List(r.Context(), status, limit, offset)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "Gagal memuat laporan", "INTERNAL_ERROR")
+		writeJSONError(w, http.StatusInternalServerError, "Failed to load reports", "INTERNAL_ERROR")
 		return
 	}
 	if reports == nil {
@@ -219,13 +219,13 @@ func (h *AdminHandler) HandleListReports(w http.ResponseWriter, r *http.Request)
 // {"status": "reviewed"|"dismissed"|"pending"}.
 func (h *AdminHandler) HandleUpdateReportStatus(w http.ResponseWriter, r *http.Request) {
 	if h.reports == nil {
-		writeJSONError(w, http.StatusServiceUnavailable, "Laporan tidak tersedia", "REPORTS_UNAVAILABLE")
+		writeJSONError(w, http.StatusServiceUnavailable, "Reports not available", "REPORTS_UNAVAILABLE")
 		return
 	}
 
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "ID laporan tidak valid", "BAD_REQUEST")
+		writeJSONError(w, http.StatusBadRequest, "Invalid report ID", "BAD_REQUEST")
 		return
 	}
 
@@ -233,20 +233,20 @@ func (h *AdminHandler) HandleUpdateReportStatus(w http.ResponseWriter, r *http.R
 		Status string `json:"status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "Body permintaan tidak valid", "BAD_REQUEST")
+		writeJSONError(w, http.StatusBadRequest, "Invalid request body", "BAD_REQUEST")
 		return
 	}
 
 	if err := h.reports.UpdateStatus(r.Context(), id, report.Status(body.Status)); err != nil {
 		if errors.Is(err, report.ErrNotFound) {
-			writeJSONError(w, http.StatusNotFound, "Laporan tidak ditemukan", "NOT_FOUND")
+			writeJSONError(w, http.StatusNotFound, "Report not found", "NOT_FOUND")
 			return
 		}
 		if errors.Is(err, report.ErrInvalidStatus) {
 			writeJSONError(w, http.StatusBadRequest, err.Error(), "VALIDATION_ERROR")
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "Gagal memperbarui laporan", "INTERNAL_ERROR")
+		writeJSONError(w, http.StatusInternalServerError, "Failed to update report", "INTERNAL_ERROR")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
@@ -255,22 +255,22 @@ func (h *AdminHandler) HandleUpdateReportStatus(w http.ResponseWriter, r *http.R
 // HandleDeleteReport removes a report by id.
 func (h *AdminHandler) HandleDeleteReport(w http.ResponseWriter, r *http.Request) {
 	if h.reports == nil {
-		writeJSONError(w, http.StatusServiceUnavailable, "Laporan tidak tersedia", "REPORTS_UNAVAILABLE")
+		writeJSONError(w, http.StatusServiceUnavailable, "Reports not available", "REPORTS_UNAVAILABLE")
 		return
 	}
 
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "ID laporan tidak valid", "BAD_REQUEST")
+		writeJSONError(w, http.StatusBadRequest, "Invalid report ID", "BAD_REQUEST")
 		return
 	}
 
 	if err := h.reports.Delete(r.Context(), id); err != nil {
 		if errors.Is(err, report.ErrNotFound) {
-			writeJSONError(w, http.StatusNotFound, "Laporan tidak ditemukan", "NOT_FOUND")
+			writeJSONError(w, http.StatusNotFound, "Report not found", "NOT_FOUND")
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "Gagal menghapus laporan", "INTERNAL_ERROR")
+		writeJSONError(w, http.StatusInternalServerError, "Failed to delete report", "INTERNAL_ERROR")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
@@ -280,7 +280,7 @@ func (h *AdminHandler) HandleListPastes(w http.ResponseWriter, r *http.Request) 
 
 	pastes, err := h.adminService.ListPastes(r.Context(), limit, offset)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "Gagal memuat daftar paste", "INTERNAL_ERROR")
+		writeJSONError(w, http.StatusInternalServerError, "Failed to load paste list", "INTERNAL_ERROR")
 		return
 	}
 	if pastes == nil {
@@ -295,10 +295,10 @@ func (h *AdminHandler) HandleDeletePaste(w http.ResponseWriter, r *http.Request)
 
 	if err := h.adminService.DeletePaste(r.Context(), slug); err != nil {
 		if errors.Is(err, admin.ErrNotFound) {
-			writeJSONError(w, http.StatusNotFound, "Paste tidak ditemukan", "NOT_FOUND")
+			writeJSONError(w, http.StatusNotFound, "Paste not found", "NOT_FOUND")
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "Gagal menghapus paste", "INTERNAL_ERROR")
+		writeJSONError(w, http.StatusInternalServerError, "Failed to delete paste", "INTERNAL_ERROR")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "slug": slug})
@@ -310,7 +310,7 @@ func (h *AdminHandler) HandleListFiles(w http.ResponseWriter, r *http.Request) {
 
 	files, err := h.adminService.ListFiles(r.Context(), limit, offset)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "Gagal memuat daftar file", "INTERNAL_ERROR")
+		writeJSONError(w, http.StatusInternalServerError, "Failed to load file list", "INTERNAL_ERROR")
 		return
 	}
 	if files == nil {
@@ -325,10 +325,10 @@ func (h *AdminHandler) HandleDeleteFile(w http.ResponseWriter, r *http.Request) 
 
 	if err := h.adminService.DeleteFile(r.Context(), slug); err != nil {
 		if errors.Is(err, admin.ErrNotFound) {
-			writeJSONError(w, http.StatusNotFound, "File tidak ditemukan", "NOT_FOUND")
+			writeJSONError(w, http.StatusNotFound, "File not found", "NOT_FOUND")
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "Gagal menghapus file", "INTERNAL_ERROR")
+		writeJSONError(w, http.StatusInternalServerError, "Failed to delete file", "INTERNAL_ERROR")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "slug": slug})

@@ -11,8 +11,8 @@ import type { ExpiryOption } from '@/lib/types';
 // --- Fixtures --------------------------------------------------------------
 
 const EXPIRY_OPTIONS: ExpiryOption[] = [
-  { label: '1 Jam', duration: 60 },
-  { label: '24 Jam', duration: 1440 },
+  { label: '1 Hour', duration: 60 },
+  { label: '24 Hours', duration: 1440 },
 ];
 
 const VISIBILITIES = ['public', 'unlisted', 'password_protected'];
@@ -26,43 +26,43 @@ function renderUploader() {
 // --- Tests -----------------------------------------------------------------
 
 describe('visibilityLabel', () => {
-  it('maps known backend visibility values to Indonesian labels', () => {
-    expect(visibilityLabel('public')).toBe('Publik');
-    expect(visibilityLabel('unlisted')).toBe('Unlisted');
-    expect(visibilityLabel('password_protected')).toBe('Dilindungi Kata Sandi');
+  it('maps known backend visibility values to English labels', () => {
+    expect(visibilityLabel('public')).toBe('PUBLIC');
+    expect(visibilityLabel('unlisted')).toBe('UNLISTED');
+    expect(visibilityLabel('password_protected')).toBe('PROTECTED');
   });
 
   it('falls back to the raw value for unknown visibilities', () => {
-    expect(visibilityLabel('something_else')).toBe('something_else');
+    expect(visibilityLabel('something_else')).toBe('SOMETHING_ELSE');
   });
 });
 
 describe('FileUploader', () => {
-  it('renders the drop zone, "Pilih File" button, expiry, and visibility controls', () => {
+  it('renders the drop zone, "SELECT FILE FROM SYSTEM" button, expiry, and visibility controls', () => {
     renderUploader();
-    expect(screen.getByText(/Seret file ke sini/)).toBeInTheDocument();
+    expect(screen.getByText(/DRAG FILE HERE OR TAP TO SELECT/)).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'Pilih File' }),
+      screen.getByRole('button', { name: '[ SELECT FILE FROM SYSTEM ]' }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText('Waktu Kadaluarsa')).toBeInTheDocument();
-    expect(screen.getByLabelText('Publik')).toBeInTheDocument();
-    expect(screen.getByLabelText('Unlisted')).toBeInTheDocument();
-    expect(screen.getByLabelText('Dilindungi Kata Sandi')).toBeInTheDocument();
+    expect(screen.getByLabelText('EXPIRED_IN')).toBeInTheDocument();
+    expect(screen.getByLabelText('PUBLIC')).toBeInTheDocument();
+    expect(screen.getByLabelText('UNLISTED')).toBeInTheDocument();
+    expect(screen.getByLabelText('PROTECTED')).toBeInTheDocument();
   });
 
-  it('shows "Lepaskan file di sini" on dragover (Req 5.3)', () => {
+  it('shows "RELEASE FILE HERE" on dragover (Req 5.3)', () => {
     renderUploader();
-    const dropZone = screen.getByLabelText(/Area unggah file/);
+    const dropZone = screen.getByLabelText(/Upload zone/);
     fireEvent.dragOver(dropZone);
-    expect(screen.getByText('Lepaskan file di sini')).toBeInTheDocument();
+    expect(screen.getByText('RELEASE FILE HERE')).toBeInTheDocument();
 
     fireEvent.dragLeave(dropZone);
-    expect(screen.queryByText('Lepaskan file di sini')).not.toBeInTheDocument();
+    expect(screen.queryByText('RELEASE FILE HERE')).not.toBeInTheDocument();
   });
 
   it('displays file name and formatted size after a drop (Req 5.4)', () => {
     renderUploader();
-    const dropZone = screen.getByLabelText(/Area unggah file/);
+    const dropZone = screen.getByLabelText(/Upload zone/);
 
     const bytes = 2048;
     const file = new File(['x'.repeat(bytes)], 'report.pdf', {
@@ -80,10 +80,10 @@ describe('FileUploader', () => {
 
   it('reveals the password field only for password_protected (Req 5.5)', () => {
     renderUploader();
-    expect(screen.queryByLabelText('Kata Sandi')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('PASSWORD')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByLabelText('Dilindungi Kata Sandi'));
-    expect(screen.getByLabelText('Kata Sandi')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('PROTECTED'));
+    expect(screen.getByLabelText('PASSWORD')).toBeInTheDocument();
   });
 
   it('uploads via XMLHttpRequest and shows a copyable URL on 201 (Req 5.6, 5.8)', async () => {
@@ -114,11 +114,11 @@ describe('FileUploader', () => {
 
     try {
       renderUploader();
-      const dropZone = screen.getByLabelText(/Area unggah file/);
+      const dropZone = screen.getByLabelText(/Upload zone/);
       const file = new File(['hello'], 'note.txt', { type: 'text/plain' });
       fireEvent.drop(dropZone, { dataTransfer: { files: [file] } });
 
-      fireEvent.click(screen.getByRole('button', { name: 'Unggah' }));
+      fireEvent.click(screen.getByRole('button', { name: '> UPLOAD' }));
 
       expect(openMock).toHaveBeenCalledWith('POST', '/api/upload');
       expect(setRequestHeaderMock).toHaveBeenCalledWith(
@@ -143,7 +143,7 @@ describe('FileUploader', () => {
       act(() => xhr.onload?.());
 
       const urlInput = (await screen.findByLabelText(
-        'URL File',
+        'FILE_URL',
       )) as HTMLInputElement;
       expect(urlInput.value).toContain('/f/abc123');
     } finally {
@@ -173,12 +173,12 @@ describe('FileUploader', () => {
 
     try {
       renderUploader();
-      const dropZone = screen.getByLabelText(/Area unggah file/);
+      const dropZone = screen.getByLabelText(/Upload zone/);
       const file = new File(['big'], 'big.bin', {
         type: 'application/octet-stream',
       });
       fireEvent.drop(dropZone, { dataTransfer: { files: [file] } });
-      fireEvent.click(screen.getByRole('button', { name: 'Unggah' }));
+      fireEvent.click(screen.getByRole('button', { name: '> UPLOAD' }));
 
       const xhr = MockXHR.instances[0];
       xhr.status = 413;
@@ -187,7 +187,7 @@ describe('FileUploader', () => {
 
       await waitFor(() =>
         expect(screen.getByRole('alert')).toHaveTextContent(
-          'Ukuran file melebihi batas maksimum 100 MB',
+          'Size exceeds max 100.0 MB',
         ),
       );
     } finally {
@@ -217,15 +217,15 @@ describe('FileUploader', () => {
 
     try {
       renderUploader();
-      const dropZone = screen.getByLabelText(/Area unggah file/);
+      const dropZone = screen.getByLabelText(/Upload zone/);
       const file = new File(['x'], 'x.txt', { type: 'text/plain' });
       fireEvent.drop(dropZone, { dataTransfer: { files: [file] } });
-      fireEvent.click(screen.getByRole('button', { name: 'Unggah' }));
+      fireEvent.click(screen.getByRole('button', { name: '> UPLOAD' }));
 
       const xhr = MockXHR.instances[0];
       xhr.status = 400;
       xhr.responseText = JSON.stringify({
-        error: 'Format durasi kadaluarsa tidak valid',
+        error: 'Invalid expiration duration format',
         code: 'INVALID_EXPIRY',
         status: 400,
       });
@@ -233,7 +233,7 @@ describe('FileUploader', () => {
 
       await waitFor(() =>
         expect(screen.getByRole('alert')).toHaveTextContent(
-          'Format durasi kadaluarsa tidak valid',
+          'Invalid expiration duration format',
         ),
       );
     } finally {

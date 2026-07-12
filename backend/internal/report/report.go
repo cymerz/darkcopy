@@ -48,11 +48,11 @@ var AllowedReasons = []string{
 
 // Errors returned by the report service.
 var (
-	ErrInvalidResource = errors.New("Jenis konten laporan tidak valid")
-	ErrInvalidReason   = errors.New("Alasan laporan tidak valid")
-	ErrInvalidSlug     = errors.New("Slug tidak valid")
-	ErrNotFound        = errors.New("laporan tidak ditemukan")
-	ErrInvalidStatus   = errors.New("Status laporan tidak valid")
+	ErrInvalidResource = errors.New("Invalid report content type")
+	ErrInvalidReason   = errors.New("Invalid report reason")
+	ErrInvalidSlug     = errors.New("Invalid slug")
+	ErrNotFound        = errors.New("Report not found")
+	ErrInvalidStatus   = errors.New("Invalid report status")
 )
 
 // Report is a single abuse/content report.

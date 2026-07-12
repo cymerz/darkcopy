@@ -123,7 +123,7 @@ func (h *FileHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	// Enforce temporary disable setting
 	if h.settings != nil && h.settings.Get().DisableFileUploads {
 		writeJSON(w, http.StatusForbidden, errorResponse{
-			Error:  "Unggah file sedang dinonaktifkan sementara oleh administrator.",
+			Error:  "File uploads are temporarily disabled by the administrator.",
 			Code:   "UPLOADS_DISABLED",
 			Status: http.StatusForbidden,
 		})
@@ -137,7 +137,7 @@ func (h *FileHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 			key := "upload:" + fileClientIP(r)
 			if allowed, _ := h.quota.Allow(key, limit); !allowed {
 				writeJSON(w, http.StatusTooManyRequests, errorResponse{
-					Error:  "Batas unggah file harian tercapai. Coba lagi besok.",
+					Error:  "Daily file upload limit reached. Try again tomorrow.",
 					Code:   "DAILY_LIMIT_REACHED",
 					Status: http.StatusTooManyRequests,
 				})
@@ -152,7 +152,7 @@ func (h *FileHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 
 	if err := r.ParseMultipartForm(maxUploadMemory); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{
-			Error:  "Gagal memproses form upload",
+			Error:  "Failed to process upload form",
 			Code:   "INVALID_FORM",
 			Status: http.StatusBadRequest,
 		})
@@ -163,7 +163,7 @@ func (h *FileHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	f, header, err := r.FormFile("file")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{
-			Error:  "File tidak ditemukan dalam form",
+			Error:  "File not found in form",
 			Code:   "FILE_MISSING",
 			Status: http.StatusBadRequest,
 		})
@@ -181,7 +181,7 @@ func (h *FileHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 			allowed, _ := h.sizeQuota.Allow("global_size", header.Size, set.MaxDailyUploadBytes)
 			if !allowed {
 				writeJSON(w, http.StatusTooManyRequests, errorResponse{
-					Error:  "Batas total ukuran unggah berkas harian sistem telah tercapai.",
+					Error:  "System daily upload size limit reached.",
 					Code:   "GLOBAL_DAILY_SIZE_LIMIT_REACHED",
 					Status: http.StatusTooManyRequests,
 				})
@@ -194,7 +194,7 @@ func (h *FileHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 			allowed, _ := h.sizeQuota.Allow("ip_size:"+clientIP, header.Size, set.MaxDailyUploadBytesPerIP)
 			if !allowed {
 				writeJSON(w, http.StatusTooManyRequests, errorResponse{
-					Error:  "Batas ukuran unggah berkas harian Anda telah tercapai. Coba lagi besok.",
+					Error:  "Your daily upload size limit reached. Try again tomorrow.",
 					Code:   "IP_DAILY_SIZE_LIMIT_REACHED",
 					Status: http.StatusTooManyRequests,
 				})
@@ -215,7 +215,7 @@ func (h *FileHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	expiresIn, err := parseExpiryDuration(expiresInStr)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{
-			Error:  "Format durasi kadaluarsa tidak valid",
+			Error:  "Invalid expiration duration format",
 			Code:   "INVALID_EXPIRY",
 			Status: http.StatusBadRequest,
 		})
@@ -265,7 +265,7 @@ func (h *FileHandler) GetFile(w http.ResponseWriter, r *http.Request) {
 	// If file is password protected, return 401 indicating password required.
 	if record.Visibility == paste.VisibilityPasswordProtected {
 		writeJSON(w, http.StatusUnauthorized, map[string]interface{}{
-			"error":             "File ini dilindungi kata sandi",
+			"error":             "This file is password protected",
 			"code":              "PASSWORD_REQUIRED",
 			"status":            http.StatusUnauthorized,
 			"password_required": true,
@@ -321,7 +321,7 @@ func (h *FileHandler) GetFile(w http.ResponseWriter, r *http.Request) {
 	if err := h.fileService.ServeFile(ctx, slug, w); err != nil {
 		log.Printf("ERROR: failed to serve file %s: %v", slug, err)
 		writeJSON(w, http.StatusInternalServerError, errorResponse{
-			Error:  "Gagal menyajikan file",
+			Error:  "Failed to serve file",
 			Code:   "SERVE_ERROR",
 			Status: http.StatusInternalServerError,
 		})
@@ -343,7 +343,7 @@ func (h *FileHandler) DirectDownload(w http.ResponseWriter, r *http.Request) {
 	// Password-protected files cannot use direct download without unlocking.
 	if record.Visibility == paste.VisibilityPasswordProtected {
 		writeJSON(w, http.StatusUnauthorized, map[string]interface{}{
-			"error":             "File ini dilindungi kata sandi",
+			"error":             "This file is password protected",
 			"code":              "PASSWORD_REQUIRED",
 			"status":            http.StatusUnauthorized,
 			"password_required": true,
@@ -395,7 +395,7 @@ func (h *FileHandler) UnlockFile(w http.ResponseWriter, r *http.Request) {
 	limited, err := h.accessController.IsRateLimited(r.Context(), clientIP, slug)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorResponse{
-			Error:  "Kesalahan internal",
+			Error:  "Internal error",
 			Code:   "INTERNAL_ERROR",
 			Status: http.StatusInternalServerError,
 		})
@@ -403,7 +403,7 @@ func (h *FileHandler) UnlockFile(w http.ResponseWriter, r *http.Request) {
 	}
 	if limited {
 		writeJSON(w, http.StatusTooManyRequests, errorResponse{
-			Error:  "Terlalu banyak percobaan. Coba lagi nanti.",
+			Error:  "Too many attempts. Try again later.",
 			Code:   "RATE_LIMITED",
 			Status: http.StatusTooManyRequests,
 		})
@@ -414,7 +414,7 @@ func (h *FileHandler) UnlockFile(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
 		writeJSON(w, http.StatusBadRequest, errorResponse{
-			Error:  "Form tidak valid",
+			Error:  "Invalid form",
 			Code:   "BAD_REQUEST",
 			Status: http.StatusBadRequest,
 		})
@@ -424,7 +424,7 @@ func (h *FileHandler) UnlockFile(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	if password == "" {
 		writeJSON(w, http.StatusBadRequest, errorResponse{
-			Error:  "Kata sandi tidak boleh kosong",
+			Error:  "Password cannot be empty",
 			Code:   "PASSWORD_EMPTY",
 			Status: http.StatusBadRequest,
 		})
@@ -442,7 +442,7 @@ func (h *FileHandler) UnlockFile(w http.ResponseWriter, r *http.Request) {
 		// Record failed attempt.
 		_ = h.accessController.RecordFailedAttempt(r.Context(), clientIP, slug)
 		writeJSON(w, http.StatusUnauthorized, errorResponse{
-			Error:  "Kata sandi salah",
+			Error:  "Incorrect password",
 			Code:   "INVALID_PASSWORD",
 			Status: http.StatusUnauthorized,
 		})
@@ -460,7 +460,7 @@ func (h *FileHandler) UnlockFile(w http.ResponseWriter, r *http.Request) {
 	if err := h.fileService.ServeFile(ctx, slug, w); err != nil {
 		log.Printf("ERROR: failed to serve unlocked file %s: %v", slug, err)
 		writeJSON(w, http.StatusInternalServerError, errorResponse{
-			Error:  "Gagal menyajikan file",
+			Error:  "Failed to serve file",
 			Code:   "SERVE_ERROR",
 			Status: http.StatusInternalServerError,
 		})
@@ -495,7 +495,7 @@ func parseExpiryDuration(s string) (time.Duration, error) {
 		return 0, err
 	}
 	if d <= 0 {
-		return 0, fmt.Errorf("durasi harus positif atau 0 untuk selamanya")
+		return 0, fmt.Errorf("duration must be positive or 0 for never")
 	}
 	return d, nil
 }
@@ -505,13 +505,13 @@ func handleFileServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, file.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, errorResponse{
-			Error:  "File tidak ditemukan",
+			Error:  "File not found",
 			Code:   "NOT_FOUND",
 			Status: http.StatusNotFound,
 		})
 	case errors.Is(err, file.ErrExpired):
 		writeJSON(w, http.StatusGone, errorResponse{
-			Error:  "File ini telah kadaluarsa",
+			Error:  "This file has expired",
 			Code:   "RESOURCE_EXPIRED",
 			Status: http.StatusGone,
 		})
@@ -542,7 +542,7 @@ func handleFileServiceError(w http.ResponseWriter, err error) {
 	default:
 		log.Printf("ERROR: unexpected internal server error: %v", err)
 		writeJSON(w, http.StatusInternalServerError, errorResponse{
-			Error:  "Kesalahan internal server",
+			Error:  "Internal server error",
 			Code:   "INTERNAL_ERROR",
 			Status: http.StatusInternalServerError,
 		})
@@ -585,7 +585,7 @@ func (h *FileHandler) HandlePresignUpload(w http.ResponseWriter, r *http.Request
 	var req presignUploadRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{
-			Error:  "Payload request tidak valid",
+			Error:  "Invalid request payload",
 			Code:   "BAD_REQUEST",
 			Status: http.StatusBadRequest,
 		})
@@ -602,7 +602,7 @@ func (h *FileHandler) HandlePresignUpload(w http.ResponseWriter, r *http.Request
 	}
 	if req.SizeBytes <= 0 || req.SizeBytes > maxSize {
 		writeJSON(w, http.StatusRequestEntityTooLarge, errorResponse{
-			Error:  fmt.Sprintf("Ukuran file melebihi batas maksimum %s", formatBytes(maxSize)),
+			Error:  fmt.Sprintf("File size exceeds maximum limit of %s", formatBytes(maxSize)),
 			Code:   "FILE_TOO_LARGE",
 			Status: http.StatusRequestEntityTooLarge,
 		})
@@ -635,7 +635,7 @@ func (h *FileHandler) HandlePresignUpload(w http.ResponseWriter, r *http.Request
 			allowed, _ := h.sizeQuota.Allow("global_size", req.SizeBytes, set.MaxDailyUploadBytes)
 			if !allowed {
 				writeJSON(w, http.StatusTooManyRequests, errorResponse{
-					Error:  "Batas total ukuran unggah berkas harian sistem telah tercapai.",
+					Error:  "System daily upload size limit reached.",
 					Code:   "GLOBAL_DAILY_SIZE_LIMIT_REACHED",
 					Status: http.StatusTooManyRequests,
 				})
@@ -648,7 +648,7 @@ func (h *FileHandler) HandlePresignUpload(w http.ResponseWriter, r *http.Request
 			allowed, _ := h.sizeQuota.Allow("ip_size:"+clientIP, req.SizeBytes, set.MaxDailyUploadBytesPerIP)
 			if !allowed {
 				writeJSON(w, http.StatusTooManyRequests, errorResponse{
-					Error:  "Batas ukuran unggah berkas harian Anda telah tercapai. Coba lagi besok.",
+					Error:  "Your daily upload size limit reached. Try again tomorrow.",
 					Code:   "IP_DAILY_SIZE_LIMIT_REACHED",
 					Status: http.StatusTooManyRequests,
 				})
@@ -703,7 +703,7 @@ func (h *FileHandler) HandleRegisterUploadedFile(w http.ResponseWriter, r *http.
 	var req registerUploadedFileRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{
-			Error:  "Payload request tidak valid",
+			Error:  "Invalid request payload",
 			Code:   "BAD_REQUEST",
 			Status: http.StatusBadRequest,
 		})
@@ -713,7 +713,7 @@ func (h *FileHandler) HandleRegisterUploadedFile(w http.ResponseWriter, r *http.
 	// SECURITY (VULN-05): Validate visibility enum to prevent arbitrary values.
 	if !isValidVisibility(req.Visibility) {
 		writeJSON(w, http.StatusBadRequest, errorResponse{
-			Error:  "Nilai visibilitas tidak valid",
+			Error:  "Invalid visibility value",
 			Code:   "INVALID_VISIBILITY",
 			Status: http.StatusBadRequest,
 		})
@@ -723,7 +723,7 @@ func (h *FileHandler) HandleRegisterUploadedFile(w http.ResponseWriter, r *http.
 	expiresIn, err := parseExpiryDuration(req.ExpiresIn)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{
-			Error:  "Format durasi kadaluarsa tidak valid",
+			Error:  "Invalid expiration duration format",
 			Code:   "INVALID_EXPIRY",
 			Status: http.StatusBadRequest,
 		})

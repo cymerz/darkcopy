@@ -236,7 +236,7 @@ export function AdminSettingsForm({
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="space-y-2">
           <span className="block text-sm font-mono text-secondary uppercase tracking-wider">
-            Maks. Pastes / IP / Day
+            Max Pastes / IP / Day
           </span>
           <input
             type="number"
@@ -252,7 +252,7 @@ export function AdminSettingsForm({
         </label>
         <label className="space-y-2">
           <span className="block text-sm font-mono text-secondary uppercase tracking-wider">
-            Maks. File Uploads / IP / Day
+            Max File Uploads / IP / Day
           </span>
           <input
             type="number"

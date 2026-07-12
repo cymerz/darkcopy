@@ -68,7 +68,7 @@ export function PasswordGate({ slug, resourceType, onUnlock }: PasswordGateProps
   const formEnabled = isFormEnabled(state.status);
   const isLoading = state.status === 'loading';
   const submitDisabled = !formEnabled;
-  const submitLabel = resourceType === 'file' ? 'Unduh File' : 'Buka';
+  const submitLabel = resourceType === 'file' ? 'Download File' : 'Unlock';
 
   const handleRateLimited = () => {
     dispatch({ type: 'RATE_LIMITED' });

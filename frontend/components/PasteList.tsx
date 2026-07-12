@@ -10,8 +10,8 @@ export function PasteList({ pastes }: PasteListProps) {
   if (!pastes || pastes.length === 0) {
     return (
       <div className="border-2 border-dashed border-surface-variant bg-surface-container-low px-6 py-12 text-center" role="status">
-        <p className="text-on-surface font-mono text-sm uppercase tracking-wider">Belum ada paste publik</p>
-        <p className="mt-1 text-xs text-on-surface-variant font-mono">Paste publik terbaru akan muncul di sini.</p>
+        <p className="text-on-surface font-mono text-sm uppercase tracking-wider">No public pastes yet</p>
+        <p className="mt-1 text-xs text-on-surface-variant font-mono">Latest public pastes will appear here.</p>
       </div>
     );
   }

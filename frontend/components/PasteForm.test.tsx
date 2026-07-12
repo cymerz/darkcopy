@@ -28,8 +28,8 @@ const LANGUAGES: Language[] = [
 ];
 
 const EXPIRY_OPTIONS: ExpiryOption[] = [
-  { label: '1 Jam', duration: 60 },
-  { label: '24 Jam', duration: 1440 },
+  { label: '1 Hour', duration: 60 },
+  { label: '24 Hours', duration: 1440 },
 ];
 
 function renderForm() {
@@ -48,26 +48,26 @@ beforeEach(() => {
 describe('PasteForm', () => {
   it('renders content, title, language, expiry, and visibility controls', () => {
     renderForm();
-    expect(screen.getByLabelText(/Konten/)).toBeRequired();
-    expect(screen.getByLabelText(/Judul/)).toBeInTheDocument();
-    expect(screen.getByLabelText('Bahasa')).toBeInTheDocument();
-    expect(screen.getByLabelText('Waktu Kadaluarsa')).toBeInTheDocument();
-    expect(screen.getByLabelText('Publik')).toBeInTheDocument();
-    expect(screen.getByLabelText('Unlisted')).toBeInTheDocument();
-    expect(screen.getByLabelText('Dilindungi Kata Sandi')).toBeInTheDocument();
+    expect(screen.getByLabelText(/CONTENT/)).toBeRequired();
+    expect(screen.getByLabelText(/PASTE_TITLE/)).toBeInTheDocument();
+    expect(screen.getByLabelText('LANGUAGE_SPEC')).toBeInTheDocument();
+    expect(screen.getByLabelText('EXPIRED_IN')).toBeInTheDocument();
+    expect(screen.getByLabelText('PUBLIC')).toBeInTheDocument();
+    expect(screen.getByLabelText('UNLISTED')).toBeInTheDocument();
+    expect(screen.getByLabelText('PROTECTED')).toBeInTheDocument();
   });
 
   it('hides the password field until password_protected is selected (Req 2.3)', () => {
     renderForm();
-    expect(screen.queryByLabelText('Kata Sandi')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('PASSWORD')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByLabelText('Dilindungi Kata Sandi'));
-    expect(screen.getByLabelText('Kata Sandi')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('PROTECTED'));
+    expect(screen.getByLabelText('PASSWORD')).toBeInTheDocument();
   });
 
   it('renders a line number for each content line (Req 2.7)', () => {
     renderForm();
-    const textarea = screen.getByLabelText(/Konten/);
+    const textarea = screen.getByLabelText(/CONTENT/);
     fireEvent.change(textarea, { target: { value: 'line1\nline2\nline3' } });
     expect(screen.getByText('1')).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
@@ -78,20 +78,20 @@ describe('PasteForm', () => {
     createPasteMock.mockResolvedValue({ slug: 'abc123', url: '/abc123' });
     renderForm();
 
-    fireEvent.change(screen.getByLabelText(/Konten/), {
+    fireEvent.change(screen.getByLabelText(/CONTENT/), {
       target: { value: 'hello world' },
     });
-    fireEvent.change(screen.getByLabelText(/Judul/), {
+    fireEvent.change(screen.getByLabelText(/PASTE_TITLE/), {
       target: { value: 'My Title' },
     });
-    fireEvent.change(screen.getByLabelText('Bahasa'), {
+    fireEvent.change(screen.getByLabelText('LANGUAGE_SPEC'), {
       target: { value: 'go' },
     });
-    fireEvent.change(screen.getByLabelText('Waktu Kadaluarsa'), {
+    fireEvent.change(screen.getByLabelText('EXPIRED_IN'), {
       target: { value: '1440' },
     });
 
-    fireEvent.submit(screen.getByRole('button', { name: /Buat Paste/ }));
+    fireEvent.submit(screen.getByRole('button', { name: /> CREATE PASTE/ }));
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/abc123'));
 
@@ -109,15 +109,15 @@ describe('PasteForm', () => {
     createPasteMock.mockResolvedValue({ slug: 'pw1', url: '/pw1' });
     renderForm();
 
-    fireEvent.change(screen.getByLabelText(/Konten/), {
+    fireEvent.change(screen.getByLabelText(/CONTENT/), {
       target: { value: 'secret' },
     });
-    fireEvent.click(screen.getByLabelText('Dilindungi Kata Sandi'));
-    fireEvent.change(screen.getByLabelText('Kata Sandi'), {
+    fireEvent.click(screen.getByLabelText('PROTECTED'));
+    fireEvent.change(screen.getByLabelText('PASSWORD'), {
       target: { value: 's3cr3t' },
     });
 
-    fireEvent.submit(screen.getByRole('button', { name: /Buat Paste/ }));
+    fireEvent.submit(screen.getByRole('button', { name: /> CREATE PASTE/ }));
 
     await waitFor(() => expect(createPasteMock).toHaveBeenCalled());
     const formData = createPasteMock.mock.calls[0][0] as FormData;
@@ -127,17 +127,17 @@ describe('PasteForm', () => {
 
   it('shows the backend error message and preserves input on failure (Req 2.5)', async () => {
     createPasteMock.mockRejectedValue(
-      new APIError('Konten tidak boleh kosong', 'VALIDATION_ERROR', 400),
+      new APIError('Content cannot be empty', 'VALIDATION_ERROR', 400),
     );
     renderForm();
 
-    const textarea = screen.getByLabelText(/Konten/) as HTMLTextAreaElement;
+    const textarea = screen.getByLabelText(/CONTENT/) as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: 'keep me' } });
 
-    fireEvent.submit(screen.getByRole('button', { name: /Buat Paste/ }));
+    fireEvent.submit(screen.getByRole('button', { name: /> CREATE PASTE/ }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Konten tidak boleh kosong',
+      'Content cannot be empty',
     );
     // Input preserved, no navigation.
     expect(textarea.value).toBe('keep me');
