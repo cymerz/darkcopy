@@ -51,6 +51,7 @@ var (
 	ErrNotFound         = errors.New("file tidak ditemukan")
 	ErrExpired          = errors.New("File ini telah kadaluarsa")
 	ErrInvalidSlug      = errors.New("Format slug tidak valid")
+	ErrDangerousFileType = errors.New("Tipe file ini tidak diizinkan untuk diunggah. Gunakan fitur paste sebagai gantinya")
 )
 
 // dangerousMIMETypes contains MIME types that must never be served inline
@@ -61,8 +62,6 @@ var dangerousMIMETypes = map[string]bool{
 	"application/javascript":   true,
 	"text/javascript":          true,
 	"image/svg+xml":            true,
-	"application/xml":          true,
-	"text/xml":                 true,
 }
 
 // IsDangerousMIME returns true if the given (lowercased) MIME type should
@@ -133,6 +132,12 @@ func (s *Service) maxFileSize() int64 {
 // Upload validates the request, generates a unique slug, saves the file to disk,
 // computes the expiry time, and persists the file metadata.
 func (s *Service) Upload(ctx context.Context, req paste.UploadFileRequest) (*paste.FileRecord, error) {
+	// SECURITY: Block dangerous file types (HTML, SVG, JS, etc.) — use paste feature instead.
+	mimeNormalized := strings.ToLower(strings.TrimSpace(req.MIMEType))
+	if dangerousMIMETypes[mimeNormalized] {
+		return nil, ErrDangerousFileType
+	}
+
 	// Validate file size does not exceed the configured maximum.
 	if req.Size > s.maxFileSize() {
 		return nil, ErrFileTooLarge
@@ -435,6 +440,11 @@ func (s *Service) SupportsUploadPresigning() bool {
 // PresignUploadURL generates a unique slug, constructs a storage key, and returns
 // a pre-signed S3 upload URL for PUT request.
 func (s *Service) PresignUploadURL(ctx context.Context, filename, contentType string) (slug, storageKey, uploadURL string, err error) {
+	// SECURITY: Block dangerous file types (HTML, SVG, JS, etc.) — use paste feature instead.
+	if dangerousMIMETypes[strings.ToLower(strings.TrimSpace(contentType))] {
+		return "", "", "", ErrDangerousFileType
+	}
+
 	presigner, ok := s.storage.(UploadPresigner)
 	if !ok {
 		return "", "", "", ErrPresignUnsupported
@@ -459,6 +469,11 @@ func (s *Service) PresignUploadURL(ctx context.Context, filename, contentType st
 
 // RegisterUploadedFile verifies the uploaded file exists in storage and records its metadata in PostgreSQL.
 func (s *Service) RegisterUploadedFile(ctx context.Context, req paste.RegisterFileRequest) (*paste.FileRecord, error) {
+	// SECURITY: Block dangerous file types even at registration step (defense-in-depth).
+	if dangerousMIMETypes[strings.ToLower(strings.TrimSpace(req.MIMEType))] {
+		return nil, ErrDangerousFileType
+	}
+
 	// Validate slug format to prevent directory traversal or access bypass.
 	// Slugs should be alphanumeric only.
 	for _, r := range req.Slug {

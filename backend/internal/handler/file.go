@@ -533,6 +533,12 @@ func handleFileServiceError(w http.ResponseWriter, err error) {
 			Code:   "INVALID_SLUG",
 			Status: http.StatusBadRequest,
 		})
+	case errors.Is(err, file.ErrDangerousFileType):
+		writeJSON(w, http.StatusUnsupportedMediaType, errorResponse{
+			Error:  err.Error(),
+			Code:   "DANGEROUS_FILE_TYPE",
+			Status: http.StatusUnsupportedMediaType,
+		})
 	default:
 		log.Printf("ERROR: unexpected internal server error: %v", err)
 		writeJSON(w, http.StatusInternalServerError, errorResponse{
