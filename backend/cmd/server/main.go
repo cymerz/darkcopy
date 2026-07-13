@@ -145,6 +145,48 @@ func main() {
 	settingsProvider := settings.NewProvider(currentSettings)
 	settingsMgr := settings.NewManager(settingsProvider, settingsRepo)
 
+	if rdb != nil {
+		// Publish settings:update event when settings are updated locally
+		settingsMgr.OnUpdate(func(ctx context.Context, s settings.Settings) {
+			go func() {
+				pubCtx, pubCancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer pubCancel()
+				if err := rdb.Publish(pubCtx, "settings:update", "ping").Err(); err != nil {
+					logger.Error("failed to publish settings update to Redis", "error", err)
+				} else {
+					logger.Info("published settings update to Redis")
+				}
+			}()
+		})
+
+		// Subscribe to settings:update events to reload settings on other instances
+		go func() {
+			pubsub := rdb.Subscribe(ctx, "settings:update")
+			defer pubsub.Close()
+
+			ch := pubsub.Channel()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case msg, ok := <-ch:
+					if !ok {
+						return
+					}
+					_ = msg
+					logger.Info("received settings update notification from Redis, reloading...")
+					reloadCtx, reloadCancel := context.WithTimeout(context.Background(), 5*time.Second)
+					if err := settingsMgr.Reload(reloadCtx); err != nil {
+						logger.Error("failed to reload settings from DB after Redis notification", "error", err)
+					} else {
+						logger.Info("successfully reloaded settings from DB")
+					}
+					reloadCancel()
+				}
+			}
+		}()
+	}
+
 	// Initialize Quota Counter.
 	var dailyQuota handler.DailyQuota = quota.NewCounter()
 	var dailySizeQuota handler.DailySizeQuota = quota.NewSizeCounter()

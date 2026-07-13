@@ -198,15 +198,24 @@ type Store interface {
 	Save(ctx context.Context, s Settings) error
 }
 
+// HookFunc defines the callback function signature for settings update notifications.
+type HookFunc func(ctx context.Context, s Settings)
+
 // Manager ties a Provider to a Store, validating and applying updates.
 type Manager struct {
 	provider *Provider
 	store    Store
+	onUpdate HookFunc
 }
 
 // NewManager creates a Manager backed by the given provider and store.
 func NewManager(provider *Provider, store Store) *Manager {
 	return &Manager{provider: provider, store: store}
+}
+
+// OnUpdate registers a callback hook that is invoked whenever settings are updated successfully.
+func (m *Manager) OnUpdate(f HookFunc) {
+	m.onUpdate = f
 }
 
 // Get returns the current settings.
@@ -226,5 +235,26 @@ func (m *Manager) Update(ctx context.Context, s Settings) error {
 		}
 	}
 	m.provider.Set(s)
+	if m.onUpdate != nil {
+		m.onUpdate(ctx, s)
+	}
+	return nil
+}
+
+// Reload loads settings from the database store and updates the in-memory provider.
+func (m *Manager) Reload(ctx context.Context) error {
+	if m.store == nil {
+		return nil
+	}
+	s, err := m.store.Load(ctx)
+	if err != nil {
+		return err
+	}
+	if s != nil {
+		if err := s.Validate(); err != nil {
+			return err
+		}
+		m.provider.Set(*s)
+	}
 	return nil
 }

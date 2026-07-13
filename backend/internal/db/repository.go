@@ -225,6 +225,21 @@ func (r *FileRepo) InsertFile(ctx context.Context, f *paste.FileRecord) error {
 
 // GetBySlug retrieves a file record by its slug.
 func (r *FileRepo) GetBySlug(ctx context.Context, slug string) (*paste.FileRecord, error) {
+	if r.rdb != nil {
+		cacheKey := "file:cache:" + slug
+		cachedVal, err := r.rdb.Get(ctx, cacheKey).Bytes()
+		if err == nil {
+			var f paste.FileRecord
+			if jsonErr := json.Unmarshal(cachedVal, &f); jsonErr == nil {
+				return &f, nil
+			}
+		}
+	}
+
+	if r.pool == nil {
+		return nil, nil
+	}
+
 	f := &paste.FileRecord{}
 	var passwordHash *string
 	err := r.pool.QueryRow(ctx, `
@@ -237,6 +252,24 @@ func (r *FileRepo) GetBySlug(ctx context.Context, slug string) (*paste.FileRecor
 	if passwordHash != nil {
 		f.PasswordHash = *passwordHash
 	}
+
+	if r.rdb != nil {
+		cachedVal, jsonErr := json.Marshal(f)
+		if jsonErr == nil {
+			ttl := 10 * time.Minute
+			if f.ExpiresAt != nil {
+				remaining := time.Until(*f.ExpiresAt)
+				if remaining <= 0 {
+					return f, nil // already expired
+				}
+				if remaining < ttl {
+					ttl = remaining
+				}
+			}
+			_ = r.rdb.Set(ctx, "file:cache:"+slug, cachedVal, ttl).Err()
+		}
+	}
+
 	return f, nil
 }
 
@@ -294,6 +327,9 @@ func (r *FileRepo) ListAllFiles(ctx context.Context, limit, offset int) ([]*admi
 // DeleteFileBySlug deletes a file record by its slug. It returns true if a row
 // was deleted, false if no file matched the slug.
 func (r *FileRepo) DeleteFileBySlug(ctx context.Context, slug string) (bool, error) {
+	if r.rdb != nil {
+		_ = r.rdb.Del(ctx, "file:cache:"+slug)
+	}
 	tag, err := r.pool.Exec(ctx, `DELETE FROM files WHERE slug = $1`, slug)
 	if err != nil {
 		return false, err
