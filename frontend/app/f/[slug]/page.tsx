@@ -174,6 +174,10 @@ function FileInfo({ slug, metadata }: { slug: string; metadata: FileMetadata }) 
                 {'>'} DOWNLOAD FILE
               </a>
               <GenerateLinkButton slug={slug} />
+              <Link href={`/qr?path=${encodeURIComponent(`/f/${slug}`)}`}
+                className="flex min-h-[44px] w-full items-center justify-center gap-2 border-2 border-surface-variant text-on-surface-variant font-mono text-sm uppercase tracking-wider transition-all hover:border-secondary hover:text-secondary active:translate-y-[2px]">
+                [ GENERATE QR CODE ]
+              </Link>
               <button type="button" disabled
                 className="flex min-h-[44px] w-full items-center justify-center gap-2 border-2 border-danger-red/40 text-danger-red/40 font-mono text-sm uppercase tracking-wider cursor-not-allowed">
                 [ DESTROY DATA ] — ADMIN ONLY
