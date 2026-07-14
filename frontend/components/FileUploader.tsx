@@ -44,12 +44,15 @@ export function FileUploader({ expiryOptions, visibilities, maxFileSize = 100 * 
 
   const [status, setStatus] = useState<UploadStatus>('idle');
   const [progress, setProgress] = useState(0);
+  const [uploadSpeed, setUploadSpeed] = useState<string>('');
+  const [eta, setEta] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [uploadUrl, setUploadUrl] = useState<string>('');
   const [uploadedMd5, setUploadedMd5] = useState<string>('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const xhrRef = useRef<XMLHttpRequest | null>(null);
+  const uploadStartRef = useRef<number>(0);
 
   const isUploading = status === 'uploading';
   const isFormDisabled = isUploading || disabled;
@@ -60,6 +63,8 @@ export function FileUploader({ expiryOptions, visibilities, maxFileSize = 100 * 
     setFile(selected);
     setStatus('idle');
     setProgress(0);
+    setUploadSpeed('');
+    setEta('');
     setUploadUrl('');
     setError(selected.size > maxFileSize ? `Size exceeds max ${formatFileSize(maxFileSize)}` : null);
   };
@@ -81,10 +86,31 @@ export function FileUploader({ expiryOptions, visibilities, maxFileSize = 100 * 
 
   const handleUpload = () => {
     if (!file || isUploading || file.size > maxFileSize) return;
-    setStatus('uploading'); setProgress(0); setError(null); setUploadUrl('');
+    setStatus('uploading'); setProgress(0); setUploadSpeed(''); setEta(''); setError(null); setUploadUrl('');
+    uploadStartRef.current = Date.now();
 
     const onProgress = (e: ProgressEvent) => {
-      if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 100));
+      if (e.lengthComputable) {
+        setProgress(Math.round((e.loaded / e.total) * 100));
+
+        const duration = (Date.now() - uploadStartRef.current) / 1000;
+        if (duration > 0.1) {
+          const bps = e.loaded / duration;
+          setUploadSpeed(formatFileSize(bps) + '/s');
+
+          const remainingBytes = e.total - e.loaded;
+          const etaSecs = remainingBytes / bps;
+          if (etaSecs > 3600) {
+            setEta('> 1h remaining');
+          } else if (etaSecs > 60) {
+            const mins = Math.floor(etaSecs / 60);
+            const secs = Math.round(etaSecs % 60);
+            setEta(`${mins}m ${secs}s remaining`);
+          } else {
+            setEta(`${Math.round(etaSecs)}s remaining`);
+          }
+        }
+      }
     };
     const onSuccess = (url: string) => { setUploadUrl(url); setStatus('success'); };
     const onError = (msg: string) => { setError(msg); setStatus('error'); };
@@ -277,9 +303,13 @@ export function FileUploader({ expiryOptions, visibilities, maxFileSize = 100 * 
       {/* Progress */}
       {isUploading && (
         <div className="space-y-2" aria-live="polite">
-          <div className="flex items-center justify-between text-sm font-mono text-on-surface-variant">
-            <span>UPLOADING...</span>
-            <span>{progress}%</span>
+          <div className="flex items-center justify-between text-xs font-mono text-on-surface-variant flex-wrap gap-2">
+            <span className="uppercase">UPLOADING...</span>
+            <div className="flex items-center gap-3">
+              {uploadSpeed && <span className="text-secondary">{uploadSpeed}</span>}
+              {eta && <span className="text-on-surface-variant">{eta}</span>}
+              <span className="font-bold text-secondary">{progress}%</span>
+            </div>
           </div>
           <div className="h-3 w-full overflow-hidden border-2 border-surface-variant bg-terminal-bg" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
             <div className="h-full bg-secondary transition-[width] duration-150 ease-out" style={{ width: `${progress}%` }} />
