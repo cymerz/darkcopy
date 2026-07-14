@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -43,6 +44,14 @@ type FileHandler struct {
 	quota DailyQuota
 	// sizeQuota enforces global/per-IP daily upload size limits; may be nil.
 	sizeQuota DailySizeQuota
+
+	// maxMultipartMem is the max RAM in bytes allowed for parsing a single multipart form.
+	// Larger portions of the upload are automatically written to the VPS disk temp directory.
+	maxMultipartMem int64
+	// maxMemTotalUsage is the global RAM cap in bytes for all concurrent uploads combined.
+	maxMemTotalUsage int64
+	// activeUploads tracks the count of currently parsing multipart upload requests (thread-safe).
+	activeUploads int64
 }
 
 // NewFileHandler creates a new FileHandler with the given dependencies.
@@ -53,6 +62,18 @@ func NewFileHandler(fs FileService, ac AccessController) *FileHandler {
 	}
 }
 
+// SetMaxMultipartMemory configures the dynamic multipart memory limits (in bytes) for uploads.
+func (h *FileHandler) SetMaxMultipartMemory(perRequestBytes, totalBytes int64) {
+	if perRequestBytes <= 0 {
+		perRequestBytes = 32 * 1024 * 1024
+	}
+	if totalBytes <= 0 {
+		totalBytes = 64 * 1024 * 1024
+	}
+	h.maxMultipartMem = perRequestBytes
+	h.maxMemTotalUsage = totalBytes
+}
+
 // SetSettings installs a settings provider used for dynamic expiry options.
 func (h *FileHandler) SetSettings(sp SettingsProvider) { h.settings = sp }
 
@@ -61,9 +82,6 @@ func (h *FileHandler) SetQuota(q DailyQuota) { h.quota = q }
 
 // SetSizeQuota installs a daily size quota enforcer for file uploads.
 func (h *FileHandler) SetSizeQuota(q DailySizeQuota) { h.sizeQuota = q }
-
-// maxUploadMemory is the maximum memory used for parsing multipart forms (100 MB).
-const maxUploadMemory = 100 << 20
 
 // RegisterFileRoutes registers all file-related routes on the given chi router.
 func RegisterFileRoutes(r chi.Router, h *FileHandler) {
@@ -147,10 +165,33 @@ func (h *FileHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Apply max body size cap before parsing multipart form.
-	const maxBodySize = maxUploadMemory + file.MaxFileSize
+	// We use the configured file size cap from settings + 10MB headroom for form fields, with a hard 100MB minimum.
+	fileSizeCap := int64(file.MaxFileSize)
+	if h.settings != nil {
+		if s := h.settings.Get().MaxFileSizeBytes; s > 0 {
+			fileSizeCap = s
+		}
+	}
+	const headroom = 10 << 20 // 10MB for multipart overhead and form fields
+	maxBodySize := fileSizeCap + headroom
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
 
-	if err := r.ParseMultipartForm(maxUploadMemory); err != nil {
+	// Dynamic memory allocation: scale down per-request RAM based on concurrent upload count.
+	// This keeps the total RAM across all uploads bounded by maxMemTotalUsage while using
+	// up to maxMultipartMem for a single idle request.
+	activeCount := atomic.AddInt64(&h.activeUploads, 1)
+	defer atomic.AddInt64(&h.activeUploads, -1)
+
+	allocatedBytes := h.maxMemTotalUsage / activeCount
+	if allocatedBytes > h.maxMultipartMem {
+		allocatedBytes = h.maxMultipartMem
+	}
+	const minMemoryBytes int64 = 1 * 1024 * 1024 // 1 MB minimum to prevent thrashing
+	if allocatedBytes < minMemoryBytes {
+		allocatedBytes = minMemoryBytes
+	}
+
+	if err := r.ParseMultipartForm(allocatedBytes); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{
 			Error:  "Failed to process upload form",
 			Code:   "INVALID_FORM",
@@ -158,6 +199,12 @@ func (h *FileHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	// Ensure temporary files in /tmp (from ParseMultipartForm disk overflow) are cleaned up.
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
 
 	// Extract file from form field "file".
 	f, header, err := r.FormFile("file")

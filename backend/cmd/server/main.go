@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -332,6 +333,16 @@ func main() {
 	fileHandler.SetSettings(settingsProvider)
 	fileHandler.SetQuota(dailyQuota)
 	fileHandler.SetSizeQuota(dailySizeQuota)
+
+	// Dynamic upload memory limits (in bytes). Per-request and total cap are configured
+	// via environment variables in Megabytes and converted to bytes here.
+	uploadMaxMemPerReqBytes := int64(envOrDefaultInt("UPLOAD_MAX_MEM_MB", 32)) * 1024 * 1024
+	uploadMaxMemTotalBytes := int64(envOrDefaultInt("UPLOAD_MAX_MEM_TOTAL_MB", 64)) * 1024 * 1024
+	fileHandler.SetMaxMultipartMemory(uploadMaxMemPerReqBytes, uploadMaxMemTotalBytes)
+	logger.Info("configured dynamic upload memory limits",
+		"per_request_mb", uploadMaxMemPerReqBytes/(1024*1024),
+		"total_cap_mb", uploadMaxMemTotalBytes/(1024*1024),
+	)
 	adminHandler := handler.NewAdminHandler(adminSvc, settingsMgr, reportSvc, adminToken)
 	reportHandler := handler.NewReportHandler(reportSvc)
 	// Limit reports to 20 per IP per day to curb spam.
@@ -412,6 +423,17 @@ func main() {
 func envOrDefault(key, defaultVal string) string {
 	if val := os.Getenv(key); val != "" {
 		return val
+	}
+	return defaultVal
+}
+
+// envOrDefaultInt returns the parsed int value of the environment variable named
+// by key, or defaultVal if the variable is not set, empty, or cannot be parsed.
+func envOrDefaultInt(key string, defaultVal int) int {
+	if val := os.Getenv(key); val != "" {
+		if n, err := strconv.Atoi(val); err == nil {
+			return n
+		}
 	}
 	return defaultVal
 }

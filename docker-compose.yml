@@ -44,6 +44,9 @@ services:
       CLEANUP_INTERVAL: ${CLEANUP_INTERVAL:-5m}
       ADMIN_TOKEN: ${ADMIN_TOKEN:-example_admin_token_change_me}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      # Upload memory limits (MB)
+      UPLOAD_MAX_MEM_MB: ${UPLOAD_MAX_MEM_MB:-32}
+      UPLOAD_MAX_MEM_TOTAL_MB: ${UPLOAD_MAX_MEM_TOTAL_MB:-64}
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
       # S3 Configurations (optional)
       S3_BUCKET: ${S3_BUCKET:-}
