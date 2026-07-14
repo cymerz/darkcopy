@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/gthbn/pastebin/internal/access"
 	"github.com/gthbn/pastebin/internal/admin"
@@ -85,15 +86,31 @@ func main() {
 	defer cancel()
 
 	// Initialize database connection.
-	pool, err := db.Connect(ctx, databaseURL)
+	writePool, err := db.Connect(ctx, databaseURL)
 	if err != nil {
-		logger.Error("failed to connect to database", "error", err)
+		logger.Error("failed to connect to write database", "error", err)
 		os.Exit(1)
 	}
-	defer pool.Close()
+	defer writePool.Close()
 
-	// Run database migrations.
-	if err := db.RunMigrations(ctx, pool); err != nil {
+	// Initialize read connection pool. If DATABASE_READ_URL matches DATABASE_URL, or is empty, reuse writePool.
+	databaseReadURL := envOrDefault("DATABASE_READ_URL", databaseURL)
+	var readPool *pgxpool.Pool
+	if databaseReadURL == databaseURL {
+		readPool = writePool
+		logger.Info("using single database pool for both reads and writes")
+	} else {
+		logger.Info("connecting to read-only database replica")
+		readPool, err = db.Connect(ctx, databaseReadURL)
+		if err != nil {
+			logger.Error("failed to connect to read database", "error", err)
+			os.Exit(1)
+		}
+		defer readPool.Close()
+	}
+
+	// Run database migrations on write pool.
+	if err := db.RunMigrations(ctx, writePool); err != nil {
 		logger.Error("failed to run migrations", "error", err)
 		os.Exit(1)
 	}
@@ -120,16 +137,16 @@ func main() {
 	}
 
 	// Initialize repositories.
-	pasteRepo := db.NewPasteRepo(pool)
-	fileRepo := db.NewFileRepo(pool)
-	expiryStore := db.NewExpiryStore(pool)
+	pasteRepo := db.NewPasteRepo(writePool, readPool)
+	fileRepo := db.NewFileRepo(writePool, readPool)
+	expiryStore := db.NewExpiryStore(writePool, readPool)
 	if rdb != nil {
 		pasteRepo = pasteRepo.WithRedis(rdb)
 		fileRepo = fileRepo.WithRedis(rdb)
 		expiryStore = expiryStore.WithRedis(rdb)
 	}
-	settingsRepo := db.NewSettingsRepo(pool)
-	reportRepo := db.NewReportRepo(pool)
+	settingsRepo := db.NewSettingsRepo(writePool, readPool)
+	reportRepo := db.NewReportRepo(writePool, readPool)
 
 	// Initialize runtime settings: start from defaults, then load any persisted
 	// overrides from the database.
@@ -205,7 +222,7 @@ func main() {
 	highlighter := highlight.NewChromaHighlighter("")
 
 	// Create a SlugExistsFunc that queries both pastes and files tables.
-	slugExistsFunc := db.SlugExists(pool)
+	slugExistsFunc := db.SlugExists(readPool)
 	urlGen := urlgen.NewGenerator(slugExistsFunc)
 
 	// Initialize file storage (S3 with Local fallback).
@@ -313,7 +330,7 @@ func main() {
 
 	if rdb != nil {
 		// Flush views/downloads from Redis to PostgreSQL every 10 seconds
-		db.StartFlusher(ctx, rdb, pool, 10*time.Second, logger)
+		db.StartFlusher(ctx, rdb, writePool, 10*time.Second, logger)
 		logger.Info("started views/downloads flusher background task")
 	}
 

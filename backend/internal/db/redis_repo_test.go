@@ -25,8 +25,8 @@ func TestRedisCachingAndBuffering(t *testing.T) {
 	defer rdb.Close()
 
 	ctx := context.Background()
-	pasteRepo := NewPasteRepo(nil).WithRedis(rdb)
-	fileRepo := NewFileRepo(nil).WithRedis(rdb)
+	pasteRepo := NewPasteRepo(nil, nil).WithRedis(rdb)
+	fileRepo := NewFileRepo(nil, nil).WithRedis(rdb)
 
 	// Test 1: GetBySlug from cache
 	dummyPaste := &paste.Paste{

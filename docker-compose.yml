@@ -40,6 +40,7 @@ services:
     environment:
       PORT: 8080
       DATABASE_URL: postgres://${POSTGRES_USER:-example_user}:${POSTGRES_PASSWORD:-example_password_change_me}@db:5432/${POSTGRES_DB:-example_db}?sslmode=disable
+      DATABASE_READ_URL: ${DATABASE_READ_URL:-postgres://example_user:example_password_change_me@db:5432/example_db?sslmode=disable}
       UPLOAD_DIR: ./uploads
       CLEANUP_INTERVAL: ${CLEANUP_INTERVAL:-5m}
       ADMIN_TOKEN: ${ADMIN_TOKEN:-example_admin_token_change_me}

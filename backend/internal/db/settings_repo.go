@@ -13,19 +13,28 @@ import (
 // SettingsRepo persists application settings in the single-row app_settings
 // table as a JSONB document. It implements settings.Store.
 type SettingsRepo struct {
-	pool *pgxpool.Pool
+	writePool *pgxpool.Pool
+	readPool  *pgxpool.Pool
 }
 
 // NewSettingsRepo creates a new SettingsRepo.
-func NewSettingsRepo(pool *pgxpool.Pool) *SettingsRepo {
-	return &SettingsRepo{pool: pool}
+func NewSettingsRepo(writePool, readPool *pgxpool.Pool) *SettingsRepo {
+	if readPool == nil {
+		readPool = writePool
+	}
+	return &SettingsRepo{
+		writePool: writePool,
+		readPool:  readPool,
+	}
 }
 
 // Load returns the persisted settings, or (nil, nil) when none have been saved
 // yet (first run).
+// Note: We query the writePool directly for settings to avoid stale reads
+// during replication lag immediately following a settings update notification.
 func (r *SettingsRepo) Load(ctx context.Context) (*settings.Settings, error) {
 	var raw []byte
-	err := r.pool.QueryRow(ctx, `SELECT data FROM app_settings WHERE id = 1`).Scan(&raw)
+	err := r.writePool.QueryRow(ctx, `SELECT data FROM app_settings WHERE id = 1`).Scan(&raw)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -46,7 +55,7 @@ func (r *SettingsRepo) Save(ctx context.Context, s settings.Settings) error {
 	if err != nil {
 		return err
 	}
-	_, err = r.pool.Exec(ctx, `
+	_, err = r.writePool.Exec(ctx, `
 		INSERT INTO app_settings (id, data, updated_at)
 		VALUES (1, $1, NOW())
 		ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
