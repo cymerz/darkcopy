@@ -21,7 +21,7 @@ export function formatRelativeTime(dateString: string): string {
   if (diffHours < 24) return `${diffHours} hours ago`;
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays < 30) return `${diffDays} days ago`;
-  return date.toLocaleDateString('id-ID');
+  return date.toLocaleDateString('en-US');
 }
 
 /**
@@ -38,9 +38,9 @@ export function formatRemainingTime(seconds: number): string {
   const minutes = Math.floor((seconds % 3600) / 60);
 
   const parts: string[] = [];
-  if (days > 0) parts.push(`${days} day`);
-  if (hours > 0) parts.push(`${hours} jam`);
-  if (minutes > 0) parts.push(`${minutes} menit`);
+  if (days > 0) parts.push(`${days} ${days === 1 ? 'day' : 'days'}`);
+  if (hours > 0) parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`);
+  if (minutes > 0) parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`);
   return parts.join(' ') + ' remaining';
 }
 

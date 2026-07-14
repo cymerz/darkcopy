@@ -54,6 +54,23 @@ This command will:
 - **Frontend Dashboard**: Open `http://localhost:3000` in your browser.
 - **Go API Backend**: Health check available at `http://localhost:8080`.
 
+### 3. Database Backups (Optional)
+The `docker-compose.yml` config includes a `db-backup` service that automatically runs daily database backups using `pg_dump` and gzip compression.
+- **Retention**: Keeps 7 days of daily backups.
+- **Location**: Backups are written to the `db_backups` Docker volume.
+
+#### Restoring a Backup
+To restore a database backup:
+1. **Reset the database** (optional):
+   ```bash
+   docker exec -it darkcopy-db psql -U example_user -d postgres -c "DROP DATABASE example_db WITH (FORCE);"
+   docker exec -it darkcopy-db psql -U example_user -d postgres -c "CREATE DATABASE example_db OWNER example_user;"
+   ```
+2. **Restore from backup file**:
+   ```bash
+   docker exec -i darkcopy-db gunzip -c < path/to/backup.sql.gz | docker exec -i darkcopy-db psql -U example_user -d example_db
+   ```
+
 ---
 
 ## Environment Configurations

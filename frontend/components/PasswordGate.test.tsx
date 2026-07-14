@@ -78,7 +78,7 @@ describe('PasswordGate state machine - nextState', () => {
     );
   });
 
-  it('UNAUTHORIZED while loading shows "Kata sandi salah"', () => {
+  it('UNAUTHORIZED while loading shows "Incorrect password"', () => {
     const result = nextState(loadingState, { type: 'UNAUTHORIZED' });
     expect(result.status).toBe('error');
     expect(result.errorMessage).toBe(MSG_WRONG_PASSWORD);

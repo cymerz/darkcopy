@@ -1,16 +1,20 @@
 package file
 
 import (
-	"sync"
 	"bufio"
 	"context"
+	"crypto/md5"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -42,11 +46,12 @@ var ErrPresignUnsupported = errors.New("storage backend does not support presign
 
 // Errors returned by the file service.
 var (
-	ErrFileTooLarge     = errors.New("Ukuran file melebihi batas maksimum 100 MB")
-	ErrPasswordRequired = errors.New("Kata sandi wajib diisi untuk visibilitas ini")
-	ErrNotFound         = errors.New("file tidak ditemukan")
-	ErrExpired          = errors.New("File ini telah kadaluarsa")
-	ErrInvalidSlug      = errors.New("Format slug tidak valid")
+	ErrFileTooLarge     = errors.New("File size exceeds maximum limit of 100 MB")
+	ErrPasswordRequired = errors.New("Password is required for this visibility")
+	ErrNotFound         = errors.New("File not found")
+	ErrExpired          = errors.New("This file has expired")
+	ErrInvalidSlug      = errors.New("Invalid slug format")
+	ErrDangerousFileType = errors.New("This file type is not allowed for upload. Use the paste feature instead")
 )
 
 // dangerousMIMETypes contains MIME types that must never be served inline
@@ -57,8 +62,6 @@ var dangerousMIMETypes = map[string]bool{
 	"application/javascript":   true,
 	"text/javascript":          true,
 	"image/svg+xml":            true,
-	"application/xml":          true,
-	"text/xml":                 true,
 }
 
 // IsDangerousMIME returns true if the given (lowercased) MIME type should
@@ -129,6 +132,12 @@ func (s *Service) maxFileSize() int64 {
 // Upload validates the request, generates a unique slug, saves the file to disk,
 // computes the expiry time, and persists the file metadata.
 func (s *Service) Upload(ctx context.Context, req paste.UploadFileRequest) (*paste.FileRecord, error) {
+	// SECURITY: Block dangerous file types (HTML, SVG, JS, etc.) — use paste feature instead.
+	mimeNormalized := strings.ToLower(strings.TrimSpace(req.MIMEType))
+	if dangerousMIMETypes[mimeNormalized] {
+		return nil, ErrDangerousFileType
+	}
+
 	// Validate file size does not exceed the configured maximum.
 	if req.Size > s.maxFileSize() {
 		return nil, ErrFileTooLarge
@@ -163,10 +172,35 @@ func (s *Service) Upload(ctx context.Context, req paste.UploadFileRequest) (*pas
 	// Build storage key: uploads/{slug}/{filename}
 	storageKey := fmt.Sprintf("uploads/%s/%s", slug, filename)
 
+	// Setup a temporary file to calculate hashes and support seeking for S3 client signing
+	tmpFile, err := os.CreateTemp("", "darkcopy-upload-*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer func() {
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+	}()
+
+	md5Hasher := md5.New()
+	sha256Hasher := sha256.New()
+	mw := io.MultiWriter(tmpFile, md5Hasher, sha256Hasher)
+
+	if _, err := io.Copy(mw, req.Reader); err != nil {
+		return nil, fmt.Errorf("failed to write temp file: %w", err)
+	}
+
+	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("failed to seek temp file: %w", err)
+	}
+
 	// Save file to disk.
-	if err := s.storage.Save(ctx, storageKey, req.Reader); err != nil {
+	if err := s.storage.Save(ctx, storageKey, tmpFile); err != nil {
 		return nil, err
 	}
+
+	md5Hash := hex.EncodeToString(md5Hasher.Sum(nil))
+	sha256Hash := hex.EncodeToString(sha256Hasher.Sum(nil))
 
 	now := s.now()
 
@@ -194,6 +228,8 @@ func (s *Service) Upload(ctx context.Context, req paste.UploadFileRequest) (*pas
 		PasswordHash: passwordHash,
 		ExpiresAt:    expiresAt,
 		CreatedAt:    now,
+		MD5Hash:      md5Hash,
+		SHA256Hash:   sha256Hash,
 	}
 
 	if err := s.repo.InsertFile(ctx, record); err != nil {
@@ -269,6 +305,15 @@ func (s *Service) ServeFile(ctx context.Context, slug string, w http.ResponseWri
 	w.Header().Set("Content-Type", record.MIMEType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Downloads-Count", strconv.Itoa(record.Downloads))
+	if record.MD5Hash != "" {
+		w.Header().Set("X-File-MD5", record.MD5Hash)
+	}
+	if record.SHA256Hash != "" {
+		w.Header().Set("X-File-SHA256", record.SHA256Hash)
+	}
+	if record.ExpiresAt != nil {
+		w.Header().Set("X-File-Expires-At", record.ExpiresAt.Format(time.RFC3339))
+	}
 
 	// Enable seeking in browser video players by announcing byte-range support.
 	w.Header().Set("Accept-Ranges", "bytes")
@@ -395,6 +440,11 @@ func (s *Service) SupportsUploadPresigning() bool {
 // PresignUploadURL generates a unique slug, constructs a storage key, and returns
 // a pre-signed S3 upload URL for PUT request.
 func (s *Service) PresignUploadURL(ctx context.Context, filename, contentType string) (slug, storageKey, uploadURL string, err error) {
+	// SECURITY: Block dangerous file types (HTML, SVG, JS, etc.) — use paste feature instead.
+	if dangerousMIMETypes[strings.ToLower(strings.TrimSpace(contentType))] {
+		return "", "", "", ErrDangerousFileType
+	}
+
 	presigner, ok := s.storage.(UploadPresigner)
 	if !ok {
 		return "", "", "", ErrPresignUnsupported
@@ -419,6 +469,11 @@ func (s *Service) PresignUploadURL(ctx context.Context, filename, contentType st
 
 // RegisterUploadedFile verifies the uploaded file exists in storage and records its metadata in PostgreSQL.
 func (s *Service) RegisterUploadedFile(ctx context.Context, req paste.RegisterFileRequest) (*paste.FileRecord, error) {
+	// SECURITY: Block dangerous file types even at registration step (defense-in-depth).
+	if dangerousMIMETypes[strings.ToLower(strings.TrimSpace(req.MIMEType))] {
+		return nil, ErrDangerousFileType
+	}
+
 	// Validate slug format to prevent directory traversal or access bypass.
 	// Slugs should be alphanumeric only.
 	for _, r := range req.Slug {
@@ -436,7 +491,7 @@ func (s *Service) RegisterUploadedFile(ctx context.Context, req paste.RegisterFi
 
 	// 1. Verify file exists in storage.
 	if err := s.storage.Head(ctx, expectedStorageKey); err != nil {
-		return nil, fmt.Errorf("file tidak ditemukan di storage: %w", err)
+		return nil, fmt.Errorf("file not found in storage: %w", err)
 	}
 
 	// 2. Validate password is required for password_protected visibility.
@@ -482,6 +537,8 @@ func (s *Service) RegisterUploadedFile(ctx context.Context, req paste.RegisterFi
 		PasswordHash: passwordHash,
 		ExpiresAt:    expiresAt,
 		CreatedAt:    now,
+		MD5Hash:      req.MD5Hash,
+		SHA256Hash:   req.SHA256Hash,
 	}
 
 	if err := s.repo.InsertFile(ctx, record); err != nil {
@@ -495,7 +552,7 @@ func (s *Service) RegisterUploadedFile(ctx context.Context, req paste.RegisterFi
 func sanitizeFilename(filename string) string {
 	// Convert backslashes to forward slashes
 	filename = strings.ReplaceAll(filename, "\\", "/")
-	
+
 	// Remove all ".." to prevent any directory traversal
 	for strings.Contains(filename, "..") {
 		filename = strings.ReplaceAll(filename, "..", "")

@@ -71,31 +71,31 @@ func Defaults() Settings {
 		MaxFileSizeBytes:  100 * 1024 * 1024, // 100 MB
 		UseDirectUpload:   false,
 		PasteExpiryOptions: []ExpiryOption{
-			{Label: "1 Jam", Minutes: 60},
-			{Label: "6 Jam", Minutes: 360},
-			{Label: "24 Jam", Minutes: 1440},
-			{Label: "7 Hari", Minutes: 10080},
-			{Label: "30 Hari", Minutes: 43200},
-			{Label: "Selamanya", Minutes: 0},
+			{Label: "1 Hour", Minutes: 60},
+			{Label: "6 Hours", Minutes: 360},
+			{Label: "24 Hours", Minutes: 1440},
+			{Label: "7 Days", Minutes: 10080},
+			{Label: "30 Days", Minutes: 43200},
+			{Label: "Forever", Minutes: 0},
 		},
 		FileExpiryOptions: []ExpiryOption{
-			{Label: "1 Jam", Minutes: 60},
-			{Label: "6 Jam", Minutes: 360},
-			{Label: "24 Jam", Minutes: 1440},
-			{Label: "7 Hari", Minutes: 10080},
-			{Label: "30 Hari", Minutes: 43200},
+			{Label: "1 Hour", Minutes: 60},
+			{Label: "6 Hours", Minutes: 360},
+			{Label: "24 Hours", Minutes: 1440},
+			{Label: "7 Days", Minutes: 10080},
+			{Label: "30 Days", Minutes: 43200},
 		},
 	}
 }
 
 // Validation errors.
 var (
-	ErrInvalidPasteSize   = errors.New("ukuran paste maksimum tidak valid")
-	ErrInvalidFileSize    = errors.New("ukuran file maksimum tidak valid")
-	ErrNoExpiryOptions    = errors.New("minimal satu pilihan waktu kadaluarsa diperlukan")
-	ErrTooManyExpiry      = fmt.Errorf("terlalu banyak pilihan waktu kadaluarsa (maks %d)", MaxExpiryOptions)
-	ErrInvalidExpiry      = errors.New("pilihan waktu kadaluarsa tidak valid")
-	ErrInvalidDailyLimit  = errors.New("batas harian tidak valid")
+	ErrInvalidPasteSize   = errors.New("Invalid maximum paste size")
+	ErrInvalidFileSize    = errors.New("Invalid maximum file size")
+	ErrNoExpiryOptions    = errors.New("at least one expiration time option is required")
+	ErrTooManyExpiry      = fmt.Errorf("too many expiration time options (max %d)", MaxExpiryOptions)
+	ErrInvalidExpiry      = errors.New("Invalid expiration time option")
+	ErrInvalidDailyLimit  = errors.New("Invalid daily limit")
 )
 
 // Validate checks the settings for consistency and safe bounds. It returns a
@@ -120,10 +120,10 @@ func (s Settings) Validate() error {
 		return ErrInvalidDailyLimit
 	}
 	if s.MaxDailyUploadBytes < 0 {
-		return errors.New("batas ukuran upload harian global tidak boleh negatif")
+		return errors.New("global daily upload size limit must not be negative")
 	}
 	if s.MaxDailyUploadBytesPerIP < 0 {
-		return errors.New("batas ukuran upload harian per IP tidak boleh negatif")
+		return errors.New("per-IP daily upload size limit must not be negative")
 	}
 	return nil
 }
@@ -198,15 +198,24 @@ type Store interface {
 	Save(ctx context.Context, s Settings) error
 }
 
+// HookFunc defines the callback function signature for settings update notifications.
+type HookFunc func(ctx context.Context, s Settings)
+
 // Manager ties a Provider to a Store, validating and applying updates.
 type Manager struct {
 	provider *Provider
 	store    Store
+	onUpdate HookFunc
 }
 
 // NewManager creates a Manager backed by the given provider and store.
 func NewManager(provider *Provider, store Store) *Manager {
 	return &Manager{provider: provider, store: store}
+}
+
+// OnUpdate registers a callback hook that is invoked whenever settings are updated successfully.
+func (m *Manager) OnUpdate(f HookFunc) {
+	m.onUpdate = f
 }
 
 // Get returns the current settings.
@@ -226,5 +235,26 @@ func (m *Manager) Update(ctx context.Context, s Settings) error {
 		}
 	}
 	m.provider.Set(s)
+	if m.onUpdate != nil {
+		m.onUpdate(ctx, s)
+	}
+	return nil
+}
+
+// Reload loads settings from the database store and updates the in-memory provider.
+func (m *Manager) Reload(ctx context.Context) error {
+	if m.store == nil {
+		return nil
+	}
+	s, err := m.store.Load(ctx)
+	if err != nil {
+		return err
+	}
+	if s != nil {
+		if err := s.Validate(); err != nil {
+			return err
+		}
+		m.provider.Set(*s)
+	}
 	return nil
 }

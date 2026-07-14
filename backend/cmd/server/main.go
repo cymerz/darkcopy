@@ -145,6 +145,48 @@ func main() {
 	settingsProvider := settings.NewProvider(currentSettings)
 	settingsMgr := settings.NewManager(settingsProvider, settingsRepo)
 
+	if rdb != nil {
+		// Publish settings:update event when settings are updated locally
+		settingsMgr.OnUpdate(func(ctx context.Context, s settings.Settings) {
+			go func() {
+				pubCtx, pubCancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer pubCancel()
+				if err := rdb.Publish(pubCtx, "settings:update", "ping").Err(); err != nil {
+					logger.Error("failed to publish settings update to Redis", "error", err)
+				} else {
+					logger.Info("published settings update to Redis")
+				}
+			}()
+		})
+
+		// Subscribe to settings:update events to reload settings on other instances
+		go func() {
+			pubsub := rdb.Subscribe(ctx, "settings:update")
+			defer pubsub.Close()
+
+			ch := pubsub.Channel()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case msg, ok := <-ch:
+					if !ok {
+						return
+					}
+					_ = msg
+					logger.Info("received settings update notification from Redis, reloading...")
+					reloadCtx, reloadCancel := context.WithTimeout(context.Background(), 5*time.Second)
+					if err := settingsMgr.Reload(reloadCtx); err != nil {
+						logger.Error("failed to reload settings from DB after Redis notification", "error", err)
+					} else {
+						logger.Info("successfully reloaded settings from DB")
+					}
+					reloadCancel()
+				}
+			}
+		}()
+	}
+
 	// Initialize Quota Counter.
 	var dailyQuota handler.DailyQuota = quota.NewCounter()
 	var dailySizeQuota handler.DailySizeQuota = quota.NewSizeCounter()
@@ -294,26 +336,41 @@ func main() {
 	reportHandler := handler.NewReportHandler(reportSvc)
 	// Limit reports to 20 per IP per day to curb spam.
 	reportHandler.SetQuota(dailyQuota, 20)
+	// Cloudflare Turnstile captcha
+	if secret := os.Getenv("TURNSTILE_SECRET_KEY"); secret != "" {
+		reportHandler.SetTurnstileSecret(secret)
+	}
 
 	// Setup chi router.
 	r := chi.NewRouter()
 	r.Use(RealIPMiddleware)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
 
-	// Register routes.
-	handler.RegisterPasteRoutes(r, pasteHandler)
-	handler.RegisterFileRoutes(r, fileHandler)
-	handler.RegisterReportRoutes(r, reportHandler)
-	handler.RegisterAdminRoutes(r, adminHandler)
+	// Register healthcheck endpoint without logger middleware to avoid log spamming.
+	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+
+	// Group routes that require logging, metrics, and recovery.
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.Logger)
+		r.Use(middleware.Recoverer)
+
+		handler.RegisterPasteRoutes(r, pasteHandler)
+		handler.RegisterFileRoutes(r, fileHandler)
+		handler.RegisterReportRoutes(r, reportHandler)
+		handler.RegisterAdminRoutes(r, adminHandler)
+
+		// Serve static files.
+		r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
+	})
+
 	if adminToken == "" {
 		logger.Warn("ADMIN_TOKEN not set — admin API is disabled")
 	} else {
 		logger.Info("admin API enabled")
 	}
-
-	// Serve static files.
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 
 	// Start ExpiryManager background goroutine.
 	expiryMgr.Start(ctx)

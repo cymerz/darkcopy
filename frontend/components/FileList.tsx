@@ -23,8 +23,8 @@ export function FileList({ files }: FileListProps) {
   if (!files || files.length === 0) {
     return (
       <div className="border-2 border-dashed border-surface-variant bg-surface-container-low px-6 py-12 text-center" role="status">
-        <p className="text-on-surface font-mono text-sm uppercase tracking-wider">Belum ada file publik</p>
-        <p className="mt-1 text-xs text-on-surface-variant font-mono">File publik terbaru akan muncul di sini.</p>
+        <p className="text-on-surface font-mono text-sm uppercase tracking-wider">No public files yet</p>
+        <p className="mt-1 text-xs text-on-surface-variant font-mono">Latest public files will appear here.</p>
       </div>
     );
   }

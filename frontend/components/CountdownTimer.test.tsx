@@ -21,12 +21,12 @@ const MAX_SECONDS = 400 * SECONDS_PER_DAY; // ~400 days, comfortably within int3
  * when that component is zero). Returns 0 for the terminal "Kadaluarsa" string.
  */
 function parseRemainingSeconds(output: string): number {
-  if (output === 'Kadaluarsa') return 0;
+  if (output === 'Expired') return 0;
   let total = 0;
   let m: RegExpMatchArray | null;
-  if ((m = output.match(/(\d+) hari/))) total += parseInt(m[1], 10) * SECONDS_PER_DAY;
-  if ((m = output.match(/(\d+) jam/))) total += parseInt(m[1], 10) * SECONDS_PER_HOUR;
-  if ((m = output.match(/(\d+) menit/))) total += parseInt(m[1], 10) * SECONDS_PER_MINUTE;
+  if ((m = output.match(/(\d+) day/))) total += parseInt(m[1], 10) * SECONDS_PER_DAY;
+  if ((m = output.match(/(\d+) hour/))) total += parseInt(m[1], 10) * SECONDS_PER_HOUR;
+  if ((m = output.match(/(\d+) minute/))) total += parseInt(m[1], 10) * SECONDS_PER_MINUTE;
   return total;
 }
 
@@ -42,7 +42,7 @@ function displayedCountdown(remainingSeconds: number, elapsed: number): string {
 
 describe('CountdownTimer - Property 6: Countdown Timer Accuracy', () => {
   // Validates: Requirements 3.6
-  it('shows a value within 60 seconds of (remainingSeconds - t), and "Kadaluarsa" once depleted', () => {
+  it('shows a value within 60 seconds of (remainingSeconds - t), and "Expired" once depleted', () => {
     fc.assert(
       fc.property(
         // Initial remaining time strictly greater than zero.
@@ -55,12 +55,12 @@ describe('CountdownTimer - Property 6: Countdown Timer Accuracy', () => {
           const display = displayedCountdown(remainingSeconds, elapsed);
 
           if (computedRemaining <= 0) {
-            // Reached zero or below => terminal "Kadaluarsa" state.
-            expect(display).toBe('Kadaluarsa');
+            // Reached zero or below => terminal "Expired" state.
+            expect(display).toBe('Expired');
           } else {
-            // Still counting down: a non-empty string ending with "tersisa".
+            // Still counting down: a non-empty string ending with "remaining".
             expect(display.length).toBeGreaterThan(0);
-            expect(display.endsWith('tersisa')).toBe(true);
+            expect(display.endsWith('remaining')).toBe(true);
 
             // Floor-to-minute formatting => the parsed value is within 60
             // seconds of the true computed remaining time.
@@ -73,10 +73,10 @@ describe('CountdownTimer - Property 6: Countdown Timer Accuracy', () => {
   });
 
   // Validates: Requirements 3.6
-  it('returns "Kadaluarsa" for any non-positive seconds (expiry boundary)', () => {
+  it('returns "Expired" for any non-positive seconds (expiry boundary)', () => {
     fc.assert(
       fc.property(fc.integer({ min: -MAX_SECONDS, max: 0 }), (seconds) => {
-        expect(formatRemainingTime(seconds)).toBe('Kadaluarsa');
+        expect(formatRemainingTime(seconds)).toBe('Expired');
       })
     );
   });
@@ -110,19 +110,19 @@ describe('CountdownTimer - Property 6: Countdown Timer Accuracy', () => {
 describe('CountdownTimer display logic - unit tests', () => {
   it('formats a multi-component remaining time correctly', () => {
     const remaining = 2 * SECONDS_PER_DAY + 3 * SECONDS_PER_HOUR + 30 * SECONDS_PER_MINUTE;
-    expect(displayedCountdown(remaining, 0)).toBe('2 hari 3 jam 30 menit tersisa');
+    expect(displayedCountdown(remaining, 0)).toBe('2 days 3 hours 30 minutes remaining');
   });
 
   it('subtracts elapsed time before formatting', () => {
     // Start at 1h 0m, after 30 minutes elapsed -> 30 minutes remaining.
     expect(displayedCountdown(SECONDS_PER_HOUR, 30 * SECONDS_PER_MINUTE)).toBe(
-      '30 menit tersisa'
+      '30 minutes remaining'
     );
   });
 
-  it('shows "Kadaluarsa" exactly when elapsed reaches the initial remaining', () => {
-    expect(displayedCountdown(SECONDS_PER_HOUR, SECONDS_PER_HOUR)).toBe('Kadaluarsa');
-    expect(displayedCountdown(SECONDS_PER_HOUR, SECONDS_PER_HOUR + 1)).toBe('Kadaluarsa');
+  it('shows "Expired" exactly when elapsed reaches the initial remaining', () => {
+    expect(displayedCountdown(SECONDS_PER_HOUR, SECONDS_PER_HOUR)).toBe('Expired');
+    expect(displayedCountdown(SECONDS_PER_HOUR, SECONDS_PER_HOUR + 1)).toBe('Expired');
   });
 
   it('round-trips a formatted string back to within 60s of the source value', () => {

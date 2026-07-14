@@ -128,3 +128,55 @@ func TestManager_Update_RejectsInvalidBeforePersist(t *testing.T) {
 		t.Error("invalid settings must not be persisted")
 	}
 }
+
+func TestManager_OnUpdate_InvokedOnChange(t *testing.T) {
+	store := &stubStore{}
+	p := NewProvider(Defaults())
+	m := NewManager(p, store)
+
+	called := false
+	var received Settings
+	m.OnUpdate(func(_ context.Context, s Settings) {
+		called = true
+		received = s
+	})
+
+	s := Defaults()
+	s.MaxPastesPerDayPerIP = 12
+	if err := m.Update(context.Background(), s); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !called {
+		t.Error("expected OnUpdate hook to be called")
+	}
+	if received.MaxPastesPerDayPerIP != 12 {
+		t.Errorf("expected received settings to have MaxPastesPerDayPerIP = 12, got %d", received.MaxPastesPerDayPerIP)
+	}
+}
+
+func TestManager_Reload_LoadsFromStore(t *testing.T) {
+	store := &stubStore{}
+	p := NewProvider(Defaults())
+	m := NewManager(p, store)
+
+	s := Defaults()
+	s.MaxPastesPerDayPerIP = 20
+	// Manually save to stub store
+	_ = store.Save(context.Background(), s)
+
+	// In-memory provider still has defaults (not 20)
+	if m.Get().MaxPastesPerDayPerIP == 20 {
+		t.Fatal("precondition failed: in-memory provider already updated")
+	}
+
+	// Trigger reload
+	if err := m.Reload(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify in-memory provider is updated
+	if m.Get().MaxPastesPerDayPerIP != 20 {
+		t.Error("expected settings to reload from store")
+	}
+}

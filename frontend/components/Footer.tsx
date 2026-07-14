@@ -46,6 +46,13 @@ export function Footer() {
             >
               Admin Panel
             </Link>
+            {' / '}
+            <Link
+              href="/tos"
+              className="transition-colors hover:text-hot-pink focus:outline-none"
+            >
+              Terms of Service
+            </Link>
           </nav>
         </div>
       </div>

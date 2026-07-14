@@ -25,9 +25,9 @@ describe('CopyButton', () => {
     jest.clearAllMocks();
   });
 
-  it('renders the default "Salin" label', () => {
+  it('renders the default "COPY" label', () => {
     render(<CopyButton content="hello" />);
-    expect(screen.getByRole('button')).toHaveTextContent('Salin');
+    expect(screen.getByRole('button')).toHaveTextContent('COPY');
   });
 
   it('copies the raw content to the clipboard on click', async () => {
@@ -38,12 +38,12 @@ describe('CopyButton', () => {
     expect(writeText).toHaveBeenCalledWith('the raw content');
   });
 
-  it('shows "Berhasil disalin" feedback after a successful copy', async () => {
+  it('shows "COPIED" feedback after a successful copy', async () => {
     render(<CopyButton content="x" />);
     await act(async () => {
       screen.getByRole('button').click();
     });
-    expect(screen.getByRole('button')).toHaveTextContent('Berhasil disalin');
+    expect(screen.getByRole('button')).toHaveTextContent('COPIED');
   });
 
   it('reverts to the default label after 2 seconds', async () => {
@@ -51,13 +51,13 @@ describe('CopyButton', () => {
     await act(async () => {
       screen.getByRole('button').click();
     });
-    expect(screen.getByRole('button')).toHaveTextContent('Berhasil disalin');
+    expect(screen.getByRole('button')).toHaveTextContent('COPIED');
 
     act(() => {
       jest.advanceTimersByTime(2000);
     });
-    expect(screen.getByRole('button')).toHaveTextContent('Salin');
-    expect(screen.getByRole('button')).not.toHaveTextContent('Berhasil disalin');
+    expect(screen.getByRole('button')).toHaveTextContent('COPY');
+    expect(screen.getByRole('button')).not.toHaveTextContent('COPIED');
   });
 
   it('shows an error state when the clipboard write fails', async () => {
@@ -66,6 +66,6 @@ describe('CopyButton', () => {
     await act(async () => {
       screen.getByRole('button').click();
     });
-    expect(screen.getByRole('button')).toHaveTextContent('Gagal menyalin');
+    expect(screen.getByRole('button')).toHaveTextContent('ERROR');
   });
 });

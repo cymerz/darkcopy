@@ -2,11 +2,18 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gthbn/pastebin/internal/report"
 )
+
+// TurnstileVerifyURL is the Cloudflare Turnstile siteverify endpoint.
+const TurnstileVerifyURL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 
 // ReportService defines the report operations used by the public handler.
 type ReportService interface {
@@ -15,11 +22,10 @@ type ReportService interface {
 
 // ReportHandler handles the public report-submission endpoint.
 type ReportHandler struct {
-	service ReportService
-	// quota optionally limits reports per IP per day; may be nil (no limit).
-	quota DailyQuota
-	// dailyLimit is the per-IP report cap when quota is set (0 disables it).
-	dailyLimit int
+	service          ReportService
+	quota            DailyQuota
+	dailyLimit       int
+	turnstileSecret  string
 }
 
 // NewReportHandler creates a new ReportHandler.
@@ -33,6 +39,11 @@ func (h *ReportHandler) SetQuota(q DailyQuota, dailyLimit int) {
 	h.dailyLimit = dailyLimit
 }
 
+// SetTurnstileSecret sets the Cloudflare Turnstile secret key for server-side verification.
+func (h *ReportHandler) SetTurnstileSecret(secret string) {
+	h.turnstileSecret = secret
+}
+
 // RegisterReportRoutes registers the public report route.
 func (h *ReportHandler) registerRoutes(r chi.Router) {
 	r.Post("/report", h.HandleCreate)
@@ -43,11 +54,35 @@ func RegisterReportRoutes(r chi.Router, h *ReportHandler) {
 	h.registerRoutes(r)
 }
 
+// verifyTurnstileToken checks the token against Cloudflare's siteverify endpoint.
+func verifyTurnstileToken(secret, token string) (bool, error) {
+	if secret == "" || token == "" {
+		return false, nil
+	}
+	data := url.Values{"secret": {secret}, "response": {token}}
+	resp, err := http.PostForm(TurnstileVerifyURL, data)
+	if err != nil {
+		return false, fmt.Errorf("turnstile verify request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if err != nil {
+		return false, fmt.Errorf("turnstile verify read failed: %w", err)
+	}
+	var result struct {
+		Success bool `json:"success"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return false, fmt.Errorf("turnstile verify parse failed: %w", err)
+	}
+	return result.Success, nil
+}
+
 // HandleCreate accepts an abuse/content report for a paste or file.
 func (h *ReportHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
-		writeJSONError(w, http.StatusBadRequest, "Form tidak valid", "BAD_REQUEST")
+	if err := r.ParseForm(); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Invalid form", "BAD_REQUEST")
 		return
 	}
 
@@ -56,7 +91,21 @@ func (h *ReportHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	// Per-IP daily limit to curb report spam.
 	if h.quota != nil && h.dailyLimit > 0 {
 		if allowed, _ := h.quota.Allow("report:"+clientIP, h.dailyLimit); !allowed {
-			writeJSONError(w, http.StatusTooManyRequests, "Batas laporan harian tercapai. Coba lagi besok.", "DAILY_LIMIT_REACHED")
+			writeJSONError(w, http.StatusTooManyRequests, "Daily report limit reached. Try again tomorrow.", "DAILY_LIMIT_REACHED")
+			return
+		}
+	}
+
+	// Cloudflare Turnstile verification.
+	turnstileToken := r.FormValue("turnstile_token")
+	if h.turnstileSecret != "" {
+		ok, err := verifyTurnstileToken(h.turnstileSecret, turnstileToken)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Failed to verify captcha", "TURNSTILE_ERROR")
+			return
+		}
+		if !ok {
+			writeJSONError(w, http.StatusForbidden, "Captcha verification failed", "TURNSTILE_FAILED")
 			return
 		}
 	}
@@ -77,6 +126,6 @@ func (h *ReportHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"success": true,
-		"message": "Laporan terkirim. Terima kasih.",
+		"message": "Report submitted. Thank you.",
 	})
 }

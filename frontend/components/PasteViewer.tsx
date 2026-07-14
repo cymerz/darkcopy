@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import DOMPurify from 'isomorphic-dompurify';
 import { CopyButton } from '@/components/CopyButton';
 import { CountdownTimer } from '@/components/CountdownTimer';
@@ -101,6 +102,10 @@ export function PasteViewer({ paste }: PasteViewerProps) {
           className="inline-flex min-h-[36px] items-center justify-center gap-1.5 border-2 border-surface-variant bg-surface-container-low px-3 py-1.5 text-xs font-mono text-on-surface-variant transition-all hover:border-secondary hover:text-secondary">
           RAW
         </a>
+        <Link href={`/qr?path=${encodeURIComponent(`/${paste.slug}`)}`}
+          className="inline-flex min-h-[36px] items-center justify-center gap-1.5 border-2 border-surface-variant bg-surface-container-low px-3 py-1.5 text-xs font-mono text-on-surface-variant transition-all hover:border-secondary hover:text-secondary">
+          QR CODE
+        </Link>
         <div className="mx-1 h-5 w-px bg-surface-variant" aria-hidden="true" />
         <button type="button" onClick={() => setShowHighlighting((v) => !v)}
           aria-pressed={showHighlighting}

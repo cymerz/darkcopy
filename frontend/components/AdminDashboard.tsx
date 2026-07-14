@@ -198,13 +198,13 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
   const handleDeleteReport = async (id: string) => { if (!window.confirm('Delete this report?')) return; setBusyReportId(id); try { await deleteAdminReport(token, id); setReports((prev) => prev.filter((r) => r.id !== id)); } catch { setError('Failed to delete report.'); } finally { setBusyReportId(null); } };
 
   const handlePurge = async () => {
-    if (!window.confirm('Bersihkan semua yang kadaluarsa?')) return;
+    if (!window.confirm('Purge all expired items?')) return;
     setPurging(true); setError(null); setNotice(null);
     try {
       const { deleted } = await purgeExpired(token);
-      setNotice(deleted > 0 ? `${deleted} item kadaluarsa telah dibersihkan.` : 'Tidak ada item kadaluarsa.');
+      setNotice(deleted > 0 ? `${deleted} expired items have been purged.` : 'No expired items found.');
       reload();
-    } catch (err) { if (err instanceof APIError && (err.status === 401 || err.status === 404)) { onLogout(); return; } setError('Gagal membersihkan.'); } finally { setPurging(false); }
+    } catch (err) { if (err instanceof APIError && (err.status === 401 || err.status === 404)) { onLogout(); return; } setError('Failed to purge.'); } finally { setPurging(false); }
   };
 
   return (
@@ -296,7 +296,7 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
 
           {/* Top 5 */}
           <div className="grid gap-6 lg:grid-cols-2">
-            <div className="border-2 border-surface-variant bg-surface-container-lowest">
+            <div className="border-2 border-surface-variant bg-surface-container-lowest overflow-hidden">
               <div className="flex items-center gap-2 px-4 py-2 bg-surface-container-low border-b-2 border-surface-variant">
                 <span className="text-label-caps text-secondary">TOP 5 PASTES (VIEWS)</span>
               </div>
@@ -304,9 +304,9 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
                 {topPastes.length === 0 ? (
                   <p className="p-4 text-xs font-mono text-on-surface-variant text-center">No data.</p>
                 ) : topPastes.map((p, idx) => (
-                  <div key={p.slug} className="flex flex-wrap items-center justify-between px-4 py-3 gap-2">
-                    <div className="min-w-0 flex-auto sm:flex-1">
-                      <div className="flex items-center gap-2">
+                  <div key={p.slug} className="flex items-center justify-between px-4 py-3 gap-2 min-w-0">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 min-w-0">
                         <span className="text-xs font-mono text-outline w-4 shrink-0">#{idx + 1}</span>
                         <a href={`/${p.slug}`} target="_blank" rel="noopener noreferrer" className="truncate text-sm font-mono text-on-surface hover:text-secondary">{p.title.trim() || 'Untitled'}</a>
                       </div>
@@ -317,7 +317,7 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
                 ))}
               </div>
             </div>
-            <div className="border-2 border-surface-variant bg-surface-container-lowest">
+            <div className="border-2 border-surface-variant bg-surface-container-lowest overflow-hidden">
               <div className="flex items-center gap-2 px-4 py-2 bg-surface-container-low border-b-2 border-surface-variant">
                 <span className="text-label-caps text-secondary">TOP 5 FILES (DOWNLOADS)</span>
               </div>
@@ -325,13 +325,13 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
                 {topFiles.length === 0 ? (
                   <p className="p-4 text-xs font-mono text-on-surface-variant text-center">No data.</p>
                 ) : topFiles.map((f, idx) => (
-                  <div key={f.slug} className="flex items-center justify-between px-4 py-3 gap-2">
+                  <div key={f.slug} className="flex items-center justify-between px-4 py-3 gap-2 min-w-0">
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
                         <span className="text-xs font-mono text-outline w-4 shrink-0">#{idx + 1}</span>
                         <a href={`/f/${f.slug}`} target="_blank" rel="noopener noreferrer" className="truncate text-sm font-mono text-on-surface hover:text-secondary">{f.filename}</a>
                       </div>
-                      <p className="text-xs font-mono text-on-surface-variant pl-6"><code>{f.slug}</code> • {formatFileSize(f.size_bytes)}</p>
+                      <p className="text-xs font-mono text-on-surface-variant pl-6 truncate"><code>{f.slug}</code> • {formatFileSize(f.size_bytes)}</p>
                     </div>
                     <span className="shrink-0 border border-secondary text-secondary px-2 py-0.5 text-[10px] font-mono">{f.downloads || 0}</span>
                   </div>

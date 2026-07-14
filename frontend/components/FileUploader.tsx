@@ -22,7 +22,7 @@ const VISIBILITY_LABELS: Record<string, string> = {
   password_protected: 'PROTECTED',
 };
 
-function visibilityLabel(value: string): string {
+export function visibilityLabel(value: string): string {
   return VISIBILITY_LABELS[value] ?? value.toUpperCase();
 }
 
@@ -46,6 +46,7 @@ export function FileUploader({ expiryOptions, visibilities, maxFileSize = 100 * 
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [uploadUrl, setUploadUrl] = useState<string>('');
+  const [uploadedMd5, setUploadedMd5] = useState<string>('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const xhrRef = useRef<XMLHttpRequest | null>(null);
@@ -98,10 +99,15 @@ export function FileUploader({ expiryOptions, visibilities, maxFileSize = 100 * 
         xhr.onload = () => {
           xhrRef.current = null;
           if (xhr.status === 200 || xhr.status === 201 || xhr.status === 204) {
+            const etag = xhr.getResponseHeader('ETag');
+            const md5Hash = etag ? etag.replace(/['"]/g, '').toLowerCase() : '';
+            if (md5Hash) setUploadedMd5(md5Hash);
+
             registerUploadedFile({
               slug: presignData.slug, filename: file.name, size_bytes: file.size,
               mime_type: file.type || 'application/octet-stream', storage_key: presignData.storage_key,
               visibility, password: visibility === 'password_protected' ? password : '', expires_in: expiresIn,
+              md5_hash: md5Hash,
             }).then((result) => {
               const origin = typeof window !== 'undefined' ? window.location.origin : '';
               const rawUrl = result.url ?? '';
@@ -127,6 +133,7 @@ export function FileUploader({ expiryOptions, visibilities, maxFileSize = 100 * 
         if (xhr.status === 201) {
           try {
             const result: UploadResponse = JSON.parse(xhr.responseText);
+            if (result.md5_hash) setUploadedMd5(result.md5_hash);
             const origin = typeof window !== 'undefined' ? window.location.origin : '';
             const rawUrl = result.url ?? '';
             onSuccess(/^https?:\/\//.test(rawUrl) ? rawUrl : `${origin}${rawUrl}`);
@@ -146,7 +153,7 @@ export function FileUploader({ expiryOptions, visibilities, maxFileSize = 100 * 
   };
 
   const resetForAnother = () => {
-    setFile(null); setStatus('idle'); setProgress(0); setError(null); setUploadUrl('');
+    setFile(null); setStatus('idle'); setProgress(0); setError(null); setUploadUrl(''); setUploadedMd5('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -167,6 +174,12 @@ export function FileUploader({ expiryOptions, visibilities, maxFileSize = 100 * 
           <a href={uploadUrl} className="inline-flex min-h-[44px] items-center text-sm font-mono text-secondary underline-offset-2 hover:underline mt-2">
             {'>'} OPEN FILE
           </a>
+          {uploadedMd5 && (
+            <div className="mt-4 border-t border-surface-variant pt-4">
+              <span className="text-label-caps text-secondary block mb-1">FILE_MD5</span>
+              <p className="text-xs font-mono text-on-surface break-all">{uploadedMd5}</p>
+            </div>
+          )}
         </div>
         <button type="button" onClick={resetForAnother}
           className="inline-flex min-h-[44px] items-center justify-center gap-2 border-2 border-secondary text-secondary px-6 py-2.5 font-mono font-bold uppercase tracking-wider transition-all duration-200 hover:bg-secondary hover:text-black active:translate-y-[2px]">

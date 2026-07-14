@@ -35,11 +35,25 @@ export default function handler(req: IncomingMessage, res: ServerResponse) {
     'cookie',
     'x-requested-with',
     'x-admin-token',
+    'x-forwarded-for',
+    'x-real-ip',
+    'cf-connecting-ip',
   ]);
   const headers: Record<string, string | string[]> = {};
   for (const [key, value] of Object.entries(req.headers)) {
     if (allowedHeaders.has(key.toLowerCase())) {
       headers[key] = value as string | string[];
+    }
+  }
+
+  // Forward client IP to backend for rate limiting & quotas
+  const clientIp = req.socket.remoteAddress;
+  if (clientIp) {
+    const xff = req.headers['x-forwarded-for'];
+    if (xff) {
+      headers['x-forwarded-for'] = `${xff}, ${clientIp}`;
+    } else {
+      headers['x-forwarded-for'] = clientIp;
     }
   }
 

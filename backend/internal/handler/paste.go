@@ -55,7 +55,7 @@ func RegisterPasteRoutes(r chi.Router, h *PasteHandler) {
 func (h *PasteHandler) HandleIndex(w http.ResponseWriter, r *http.Request) {
 	pastes, err := h.pasteService.ListPublicRecent(r.Context(), 20)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "Gagal memuat daftar paste", "INTERNAL_ERROR")
+		writeJSONError(w, http.StatusInternalServerError, "Failed to load paste list", "INTERNAL_ERROR")
 		return
 	}
 
@@ -63,7 +63,7 @@ func (h *PasteHandler) HandleIndex(w http.ResponseWriter, r *http.Request) {
 	if h.fileService != nil {
 		files, err = h.fileService.ListPublicRecent(r.Context(), 20)
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "Gagal memuat daftar file", "INTERNAL_ERROR")
+			writeJSONError(w, http.StatusInternalServerError, "Failed to load file list", "INTERNAL_ERROR")
 			return
 		}
 	}
@@ -118,13 +118,13 @@ func (h *PasteHandler) pasteExpiryOptions() []map[string]interface{} {
 func (h *PasteHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	// Enforce temporary disable setting
 	if h.settings != nil && h.settings.Get().DisableNewPastes {
-		writeJSONError(w, http.StatusForbidden, "Pembuatan paste baru sedang dinonaktifkan sementara oleh administrator.", "PASTES_DISABLED")
+		writeJSONError(w, http.StatusForbidden, "New paste creation has been temporarily disabled by the administrator.", "PASTES_DISABLED")
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
 	if err := r.ParseForm(); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "Form tidak valid", "BAD_REQUEST")
+		writeJSONError(w, http.StatusBadRequest, "Invalid form", "BAD_REQUEST")
 		return
 	}
 
@@ -134,7 +134,7 @@ func (h *PasteHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		if limit > 0 {
 			key := "paste:" + extractIP(r)
 			if allowed, _ := h.quota.Allow(key, limit); !allowed {
-				writeJSONError(w, http.StatusTooManyRequests, "Batas pembuatan paste harian tercapai. Coba lagi besok.", "DAILY_LIMIT_REACHED")
+				writeJSONError(w, http.StatusTooManyRequests, "Daily paste creation limit reached. Try again tomorrow.", "DAILY_LIMIT_REACHED")
 				return
 			}
 		}
@@ -206,19 +206,19 @@ func (h *PasteHandler) HandleRaw(w http.ResponseWriter, r *http.Request) {
 	p, err := h.pasteService.GetBySlug(r.Context(), slug)
 	if err != nil {
 		if errors.Is(err, paste.ErrNotFound) {
-			http.Error(w, "Paste tidak ditemukan", http.StatusNotFound)
+			http.Error(w, "Paste not found", http.StatusNotFound)
 			return
 		}
 		if errors.Is(err, paste.ErrExpired) {
-			http.Error(w, "Paste ini telah kadaluarsa", http.StatusGone)
+			http.Error(w, "This paste has expired", http.StatusGone)
 			return
 		}
-		http.Error(w, "Gagal memuat paste", http.StatusInternalServerError)
+		http.Error(w, "Failed to load paste", http.StatusInternalServerError)
 		return
 	}
 
 	if p.Visibility == paste.VisibilityPasswordProtected {
-		http.Error(w, "Password diperlukan", http.StatusUnauthorized)
+		http.Error(w, "Password required", http.StatusUnauthorized)
 		return
 	}
 
@@ -235,21 +235,21 @@ func (h *PasteHandler) HandleView(w http.ResponseWriter, r *http.Request) {
 	p, err := h.pasteService.GetBySlug(r.Context(), slug)
 	if err != nil {
 		if errors.Is(err, paste.ErrNotFound) {
-			writeJSONError(w, http.StatusNotFound, "Paste tidak ditemukan", "NOT_FOUND")
+			writeJSONError(w, http.StatusNotFound, "Paste not found", "NOT_FOUND")
 			return
 		}
 		if errors.Is(err, paste.ErrExpired) {
-			writeJSONError(w, http.StatusGone, "Paste ini telah kadaluarsa", "RESOURCE_EXPIRED")
+			writeJSONError(w, http.StatusGone, "This paste has expired", "RESOURCE_EXPIRED")
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "Gagal memuat paste", "INTERNAL_ERROR")
+		writeJSONError(w, http.StatusInternalServerError, "Failed to load paste", "INTERNAL_ERROR")
 		return
 	}
 
 	// If paste is password protected, return 401 indicating password is required.
 	if p.Visibility == paste.VisibilityPasswordProtected {
 		writeJSON(w, http.StatusUnauthorized, map[string]interface{}{
-			"error":             "Password diperlukan",
+			"error":             "Password required",
 			"code":              "PASSWORD_REQUIRED",
 			"status":            http.StatusUnauthorized,
 			"password_required": true,
@@ -296,7 +296,7 @@ func (h *PasteHandler) HandleUnlock(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
 	if err := r.ParseForm(); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "Form tidak valid", "BAD_REQUEST")
+		writeJSONError(w, http.StatusBadRequest, "Invalid form", "BAD_REQUEST")
 		return
 	}
 
@@ -306,11 +306,11 @@ func (h *PasteHandler) HandleUnlock(w http.ResponseWriter, r *http.Request) {
 	// Check rate limiting first.
 	limited, err := h.accessController.IsRateLimited(r.Context(), clientIP, slug)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "Gagal memeriksa rate limit", "INTERNAL_ERROR")
+		writeJSONError(w, http.StatusInternalServerError, "Failed to check rate limit", "INTERNAL_ERROR")
 		return
 	}
 	if limited {
-		writeJSONError(w, http.StatusTooManyRequests, "Terlalu banyak percobaan. Silakan coba lagi nanti.", "RATE_LIMITED")
+		writeJSONError(w, http.StatusTooManyRequests, "Too many attempts. Please try again later.", "RATE_LIMITED")
 		return
 	}
 
@@ -318,21 +318,21 @@ func (h *PasteHandler) HandleUnlock(w http.ResponseWriter, r *http.Request) {
 	valid, err := h.pasteService.ValidatePassword(r.Context(), slug, password)
 	if err != nil {
 		if errors.Is(err, paste.ErrNotFound) {
-			writeJSONError(w, http.StatusNotFound, "Paste tidak ditemukan", "NOT_FOUND")
+			writeJSONError(w, http.StatusNotFound, "Paste not found", "NOT_FOUND")
 			return
 		}
 		if errors.Is(err, paste.ErrExpired) {
-			writeJSONError(w, http.StatusGone, "Paste ini telah kadaluarsa", "RESOURCE_EXPIRED")
+			writeJSONError(w, http.StatusGone, "This paste has expired", "RESOURCE_EXPIRED")
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "Gagal memvalidasi password", "INTERNAL_ERROR")
+		writeJSONError(w, http.StatusInternalServerError, "Failed to validate password", "INTERNAL_ERROR")
 		return
 	}
 
 	if !valid {
 		// Record failed attempt.
 		_ = h.accessController.RecordFailedAttempt(r.Context(), clientIP, slug)
-		writeJSONError(w, http.StatusUnauthorized, "Password salah", "INVALID_PASSWORD")
+		writeJSONError(w, http.StatusUnauthorized, "Incorrect password", "INVALID_PASSWORD")
 		return
 	}
 
@@ -345,7 +345,7 @@ func (h *PasteHandler) HandleUnlock(w http.ResponseWriter, r *http.Request) {
 	// Fetch the paste to return its content.
 	p, err := h.pasteService.GetBySlug(r.Context(), slug)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "Gagal memuat paste", "INTERNAL_ERROR")
+		writeJSONError(w, http.StatusInternalServerError, "Failed to load paste", "INTERNAL_ERROR")
 		return
 	}
 

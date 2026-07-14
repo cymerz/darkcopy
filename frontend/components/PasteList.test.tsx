@@ -12,7 +12,7 @@ function makePaste(overrides: Partial<PasteSummary> = {}): PasteSummary {
     slug: 'abc123',
     title: 'My Paste',
     language: 'typescript',
-    // Far in the past so relative time is deterministic ("hari yang lalu").
+    // Far in the past so relative time is deterministic ("days ago").
     created_at: '2020-01-01T00:00:00.000Z',
     expires_at: null,
     ...overrides,
@@ -22,7 +22,7 @@ function makePaste(overrides: Partial<PasteSummary> = {}): PasteSummary {
 describe('PasteList', () => {
   it('shows the empty-state message when there are no pastes', () => {
     render(<PasteList pastes={[]} />);
-    expect(screen.getByText('Belum ada paste publik')).toBeInTheDocument();
+    expect(screen.getByText('No public pastes yet')).toBeInTheDocument();
   });
 
   it('renders a card linking to /{slug}', () => {
@@ -40,7 +40,7 @@ describe('PasteList', () => {
         ]}
       />
     );
-    expect(screen.getAllByText('Untitled')).toHaveLength(2);
+    expect(screen.getAllByText(/Untitled/)).toHaveLength(2);
   });
 
   it('displays the language badge', () => {
@@ -50,8 +50,8 @@ describe('PasteList', () => {
 
   it('displays a relative creation time', () => {
     render(<PasteList pastes={[makePaste()]} />);
-    // Old dates collapse to "{n} hari yang lalu" (days ago).
-    expect(screen.getByText(/yang lalu|\d/)).toBeInTheDocument();
+    // Old dates collapse to "{n} days ago".
+    expect(screen.getByText(/ago|\d/)).toBeInTheDocument();
   });
 
   it('renders one card per paste', () => {
