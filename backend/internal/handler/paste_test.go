@@ -40,6 +40,18 @@ func (m *mockPasteService) GetBySlug(ctx context.Context, slug string) (*paste.P
 	return nil, paste.ErrNotFound
 }
 
+func (m *mockPasteService) IncrementViews(ctx context.Context, slug string) error {
+	return nil
+}
+
+func (m *mockPasteService) Search(ctx context.Context, query string, limit int) ([]*paste.PasteSummary, error) {
+	return nil, nil
+}
+
+func (m *mockPasteService) Fork(ctx context.Context, originalSlug string) (*paste.Paste, error) {
+	return nil, paste.ErrNotFound
+}
+
 func (m *mockPasteService) ValidatePassword(ctx context.Context, slug, password string) (bool, error) {
 	if m.validatePasswordFn != nil {
 		return m.validatePasswordFn(ctx, slug, password)
@@ -51,13 +63,8 @@ func (m *mockPasteService) ListPublicRecent(ctx context.Context, limit int) ([]*
 	if m.listPublicRecentFn != nil {
 		return m.listPublicRecentFn(ctx, limit)
 	}
-	return nil, nil
+		return nil, nil
 }
-
-func (m *mockPasteService) IncrementViews(ctx context.Context, slug string) error {
-	return nil
-}
-
 
 type mockHighlighter struct {
 	highlightFn          func(content, language string) (string, error)

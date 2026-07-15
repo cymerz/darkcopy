@@ -52,6 +52,10 @@ func (m *mockFileRepository) IncrementDownloads(ctx context.Context, slug string
 	return nil
 }
 
+func (m *mockFileRepository) SearchFiles(ctx context.Context, query string, limit int) ([]*paste.FileSummary, error) {
+	return nil, nil
+}
+
 
 // mockFileStorage is a test double for FileStorage.
 type mockFileStorage struct {
@@ -62,6 +66,8 @@ type mockFileStorage struct {
 	openErr     error
 	deletedKey  string
 	deleteErr   error
+	// headSize controls Head return; if 0 uses len(savedData)
+	headSize int64
 }
 
 func (m *mockFileStorage) Save(ctx context.Context, storageKey string, reader io.Reader) error {
@@ -86,8 +92,11 @@ func (m *mockFileStorage) Delete(ctx context.Context, storageKey string) error {
 	return m.deleteErr
 }
 
-func (m *mockFileStorage) Head(ctx context.Context, storageKey string) error {
-	return nil
+func (m *mockFileStorage) Head(ctx context.Context, storageKey string) (int64, error) {
+	if m.headSize > 0 {
+		return m.headSize, nil
+	}
+	return int64(len(m.savedData)), nil
 }
 
 func TestUpload_ValidPublicFile(t *testing.T) {
@@ -598,7 +607,7 @@ func TestUpload_PathTraversalFilenameSanitization(t *testing.T) {
 
 func TestRegisterUploadedFile_SecurityValidations(t *testing.T) {
 	repo := &mockFileRepository{}
-	storage := &mockFileStorage{}
+	storage := &mockFileStorage{headSize: 100}
 	urlGen := &mockURLGenerator{slug: "abc12345"}
 	svc := NewService(repo, storage, urlGen)
 

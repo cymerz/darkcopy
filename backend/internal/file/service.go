@@ -85,12 +85,12 @@ type FileStorage interface {
 	Save(ctx context.Context, storageKey string, reader io.Reader) error
 	Open(ctx context.Context, storageKey string) (io.ReadCloser, error)
 	Delete(ctx context.Context, storageKey string) error
-	Head(ctx context.Context, storageKey string) error
+	Head(ctx context.Context, storageKey string) (size int64, err error)
 }
 
 // UploadPresigner defines the interface for generating presigned upload URLs.
 type UploadPresigner interface {
-	PresignUploadURL(ctx context.Context, storageKey string, expires time.Duration, contentType string) (string, error)
+	PresignUploadURL(ctx context.Context, storageKey string, expires time.Duration, contentType string, size int64) (string, error)
 }
 
 // Service is the concrete implementation of FileService.
@@ -448,10 +448,15 @@ func (s *Service) SupportsUploadPresigning() bool {
 
 // PresignUploadURL generates a unique slug, constructs a storage key, and returns
 // a pre-signed S3 upload URL for PUT request.
-func (s *Service) PresignUploadURL(ctx context.Context, filename, contentType string) (slug, storageKey, uploadURL string, err error) {
+func (s *Service) PresignUploadURL(ctx context.Context, filename, contentType string, size int64) (slug, storageKey, uploadURL string, err error) {
 	// SECURITY: Block dangerous file types (HTML, SVG, JS, etc.) — use paste feature instead.
 	if dangerousMIMETypes[strings.ToLower(strings.TrimSpace(contentType))] {
 		return "", "", "", ErrDangerousFileType
+	}
+
+	// Enforce max size before signing
+	if size <= 0 || size > s.maxFileSize() {
+		return "", "", "", ErrFileTooLarge
 	}
 
 	presigner, ok := s.storage.(UploadPresigner)
@@ -468,7 +473,7 @@ func (s *Service) PresignUploadURL(ctx context.Context, filename, contentType st
 	}
 
 	storageKey = fmt.Sprintf("uploads/%s/%s", slug, sanitizedFilename)
-	uploadURL, err = presigner.PresignUploadURL(ctx, storageKey, DefaultPresignExpiry, contentType)
+	uploadURL, err = presigner.PresignUploadURL(ctx, storageKey, DefaultPresignExpiry, contentType, size)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -498,9 +503,13 @@ func (s *Service) RegisterUploadedFile(ctx context.Context, req paste.RegisterFi
 	// to prevent clients from registering arbitrary keys or accessing other users' files.
 	expectedStorageKey := fmt.Sprintf("uploads/%s/%s", req.Slug, filename)
 
-	// 1. Verify file exists in storage.
-	if err := s.storage.Head(ctx, expectedStorageKey); err != nil {
+	// 1. Verify file exists in storage and actual size matches declared size.
+	actualSize, err := s.storage.Head(ctx, expectedStorageKey)
+	if err != nil {
 		return nil, fmt.Errorf("file not found in storage: %w", err)
+	}
+	if actualSize != req.Size {
+		return nil, fmt.Errorf("declared size %d does not match actual size %d", req.Size, actualSize)
 	}
 
 	// 2. Validate password is required for password_protected visibility.

@@ -31,7 +31,7 @@ type FileService interface {
 
 	// Direct S3 upload methods
 	SupportsUploadPresigning() bool
-	PresignUploadURL(ctx context.Context, filename, contentType string) (slug, storageKey, uploadURL string, err error)
+	PresignUploadURL(ctx context.Context, filename, contentType string, size int64) (slug, storageKey, uploadURL string, err error)
 	RegisterUploadedFile(ctx context.Context, req paste.RegisterFileRequest) (*paste.FileRecord, error)
 }
 
@@ -711,7 +711,7 @@ func (h *FileHandler) HandlePresignUpload(w http.ResponseWriter, r *http.Request
 		mimeType = "application/octet-stream"
 	}
 
-	slug, storageKey, uploadURL, err := h.fileService.PresignUploadURL(r.Context(), req.Filename, mimeType)
+	slug, storageKey, uploadURL, err := h.fileService.PresignUploadURL(r.Context(), req.Filename, mimeType, req.SizeBytes)
 	if err != nil {
 		handleFileServiceError(w, err)
 		return

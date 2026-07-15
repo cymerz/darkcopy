@@ -73,8 +73,12 @@ func (m *mockFileService) SupportsUploadPresigning() bool {
 	return false
 }
 
-func (m *mockFileService) PresignUploadURL(ctx context.Context, filename, contentType string) (slug, storageKey, uploadURL string, err error) {
+func (m *mockFileService) PresignUploadURL(ctx context.Context, filename, contentType string, size int64) (slug, storageKey, uploadURL string, err error) {
 	return "", "", "", nil
+}
+
+func (m *mockFileService) Search(ctx context.Context, query string, limit int) ([]*paste.FileSummary, error) {
+	return nil, nil
 }
 
 func (m *mockFileService) RegisterUploadedFile(ctx context.Context, req paste.RegisterFileRequest) (*paste.FileRecord, error) {
