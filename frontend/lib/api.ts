@@ -12,6 +12,8 @@ import type {
   AdminReportListResponse,
   ReportResourceType,
   ReportStatus,
+  PasteSummary,
+  FileSummary,
 } from './types';
 import { APIError } from './types';
 
@@ -244,6 +246,45 @@ export async function unlockFile(
     method: 'POST',
     body,
     headers: { Accept: 'application/json' },
+  });
+}
+
+/**
+ * GET /search — Search public pastes containing the query.
+ */
+export async function searchPastes(
+  query: string,
+  limit?: number,
+): Promise<PasteSummary[]> {
+  const params = new URLSearchParams({ q: query });
+  if (limit !== undefined) {
+    params.append('limit', limit.toString());
+  }
+  return apiFetch<PasteSummary[]>(`/search?${params.toString()}`, { cache: 'no-store' });
+}
+
+/**
+ * GET /f/search — Search public files by filename.
+ */
+export async function searchFiles(
+  query: string,
+  limit?: number,
+): Promise<FileSummary[]> {
+  const params = new URLSearchParams({ q: query });
+  if (limit !== undefined) {
+    params.append('limit', limit.toString());
+  }
+  return apiFetch<FileSummary[]>(`/f/search?${params.toString()}`, { cache: 'no-store' });
+}
+
+/**
+ * GET /{slug}/fork — Get paste data for forking (pre-filling a new paste form).
+ */
+export async function forkPaste(
+  slug: string,
+): Promise<{ title: string; content: string; language: string }> {
+  return apiFetch<{ title: string; content: string; language: string }>(`/${slug}/fork`, {
+    cache: 'no-store',
   });
 }
 

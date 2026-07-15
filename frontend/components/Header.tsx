@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useState, useRef } from 'react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
 interface NavLink {
@@ -24,10 +24,22 @@ function isActivePath(pathname: string | null, href: string): boolean {
 
 export function Header() {
   const pathname = usePathname();
+  const router = useRouter();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const closeMenu = () => setIsMenuOpen(false);
   const toggleMenu = () => setIsMenuOpen((open) => !open);
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = searchQuery.trim();
+    if (!q) return;
+    router.push(`/search?q=${encodeURIComponent(q)}`);
+    setSearchQuery('');
+    closeMenu();
+  };
 
   return (
     <header className="sticky top-0 z-50 bg-background/95 border-b-2 border-secondary shadow-[0_0_15px_rgba(76,215,246,0.3)]">
@@ -77,6 +89,21 @@ export function Header() {
 
           {/* Right-side controls */}
           <div className="flex items-center gap-2">
+            {/* Search bar - desktop */}
+            <form onSubmit={handleSearch} className="hidden md:flex items-center">
+              <input
+                type="search"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="Search pastes and files"
+                className="h-9 w-32 lg:w-48 border-2 border-surface-variant bg-surface-container-lowest px-2.5 py-1.5 text-xs font-mono text-on-surface placeholder-on-surface-variant focus:border-secondary focus:outline-none transition-colors"
+              />
+              <button type="submit" aria-label="Search"
+                className="h-9 border-2 border-l-0 border-surface-variant bg-surface-container-low px-2.5 text-xs font-mono text-on-surface-variant hover:border-secondary hover:text-secondary transition-colors">
+                &gt;
+              </button>
+            </form>
             <ThemeToggle />
             <button
               type="button"
@@ -125,6 +152,21 @@ export function Header() {
         }`}
       >
         <nav className="flex flex-col px-4 sm:px-6 py-4 gap-1.5" aria-label="Mobile navigation">
+          {/* Search - mobile */}
+          <form onSubmit={(e) => { e.preventDefault(); handleSearch(e); }} className="flex mb-2">
+            <input
+              type="search"
+              placeholder="Search pastes & files..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              aria-label="Search"
+              className="flex-1 min-h-[44px] border-2 border-surface-variant bg-surface-container-lowest px-3 py-2.5 text-sm font-mono text-on-surface placeholder-on-surface-variant focus:border-secondary focus:outline-none transition-colors"
+            />
+            <button type="submit" aria-label="Search"
+              className="min-h-[44px] border-2 border-l-0 border-surface-variant bg-surface-container-low px-3 py-2.5 text-sm font-mono text-on-surface-variant hover:border-secondary hover:text-secondary transition-colors">
+              &gt;
+            </button>
+          </form>
           {NAV_LINKS.map((link) => {
             const active = isActivePath(pathname, link.href);
             return (

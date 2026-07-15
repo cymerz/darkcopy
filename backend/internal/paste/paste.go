@@ -21,16 +21,18 @@ const (
 
 // Paste represents a stored text paste.
 type Paste struct {
-	ID           uuid.UUID
-	Slug         string
-	Title        string
-	Content      string
-	Language     string
-	Visibility   Visibility
-	PasswordHash string
-	ExpiresAt    *time.Time
-	CreatedAt    time.Time
-	Views        int
+	ID            uuid.UUID
+	Slug          string
+	Title         string
+	Content       string
+	Language      string
+	Visibility    Visibility
+	PasswordHash  string
+	ExpiresAt     *time.Time
+	CreatedAt     time.Time
+	Views         int
+	BurnAfterRead bool
+	CreatorToken  string // one-time token to skip burn on first view; empty if burned or not burn-after-read
 }
 
 
@@ -55,13 +57,14 @@ type FileSummary struct {
 
 // CreatePasteRequest contains the data needed to create a new paste.
 type CreatePasteRequest struct {
-	Content    string
-	Language   string
-	Title      string
-	Visibility Visibility
-	Password   string        // required if Visibility == VisibilityPasswordProtected
-	ExpiresIn  time.Duration // 0 = use default (24h)
-	CustomSlug string        // optional; if empty a random slug is generated
+	Content       string
+	Language      string
+	Title         string
+	Visibility    Visibility
+	Password      string        // required if Visibility == VisibilityPasswordProtected
+	ExpiresIn     time.Duration // 0 = use default (24h)
+	CustomSlug    string        // optional; if empty a random slug is generated
+	BurnAfterRead bool
 }
 
 // FileRecord represents a stored file's metadata.

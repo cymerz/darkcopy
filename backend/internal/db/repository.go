@@ -41,9 +41,12 @@ func (r *PasteRepo) WithRedis(rdb *redis.Client) *PasteRepo {
 // InsertPaste inserts a new paste into the database.
 func (r *PasteRepo) InsertPaste(ctx context.Context, p *paste.Paste) error {
 	_, err := r.writePool.Exec(ctx, `
-		INSERT INTO pastes (id, slug, title, content, language, visibility, password_hash, expires_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, p.ID, p.Slug, p.Title, p.Content, p.Language, p.Visibility, nilIfEmpty(p.PasswordHash), p.ExpiresAt, p.CreatedAt)
+		INSERT INTO pastes (id, slug, title, content, language, visibility, password_hash, expires_at, created_at, burn_after_read)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, p.ID, p.Slug, p.Title, p.Content, p.Language, p.Visibility, nilIfEmpty(p.PasswordHash), p.ExpiresAt, p.CreatedAt, p.BurnAfterRead)
+	if err == nil && r.rdb != nil {
+		r.rdb.Del(ctx, "paste:recent")
+	}
 	return err
 }
 
@@ -73,9 +76,9 @@ func (r *PasteRepo) GetBySlug(ctx context.Context, slug string) (*paste.Paste, e
 	p := &paste.Paste{}
 	var passwordHash *string
 	err := r.readPool.QueryRow(ctx, `
-		SELECT id, slug, title, content, language, visibility, password_hash, expires_at, created_at, views
+		SELECT id, slug, title, content, language, visibility, password_hash, expires_at, created_at, views, burn_after_read
 		FROM pastes WHERE slug = $1
-	`, slug).Scan(&p.ID, &p.Slug, &p.Title, &p.Content, &p.Language, &p.Visibility, &passwordHash, &p.ExpiresAt, &p.CreatedAt, &p.Views)
+	`, slug).Scan(&p.ID, &p.Slug, &p.Title, &p.Content, &p.Language, &p.Visibility, &passwordHash, &p.ExpiresAt, &p.CreatedAt, &p.Views, &p.BurnAfterRead)
 	if err != nil {
 		return nil, err
 	}
@@ -110,6 +113,17 @@ func (r *PasteRepo) GetBySlug(ctx context.Context, slug string) (*paste.Paste, e
 
 // ListPublicRecent returns the most recent public pastes up to the given limit.
 func (r *PasteRepo) ListPublicRecent(ctx context.Context, limit int) ([]*paste.PasteSummary, error) {
+	// Serve from cache when possible
+	if r.rdb != nil && limit <= 20 {
+		cached, err := r.rdb.Get(ctx, "paste:recent").Bytes()
+		if err == nil {
+			var summaries []*paste.PasteSummary
+			if jsonErr := json.Unmarshal(cached, &summaries); jsonErr == nil {
+				return summaries, nil
+			}
+		}
+	}
+
 	rows, err := r.readPool.Query(ctx, `
 		SELECT slug, title, language, created_at, expires_at
 		FROM pastes
@@ -131,7 +145,18 @@ func (r *PasteRepo) ListPublicRecent(ctx context.Context, limit int) ([]*paste.P
 		}
 		summaries = append(summaries, s)
 	}
-	return summaries, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Cache for 60s — fresh enough for the home page
+	if r.rdb != nil && limit <= 20 {
+		if cached, jsonErr := json.Marshal(summaries); jsonErr == nil {
+			r.rdb.Set(ctx, "paste:recent", cached, 60*time.Second)
+		}
+	}
+
+	return summaries, nil
 }
 
 // ListAllPastes returns all pastes (any visibility, including expired) ordered
@@ -217,6 +242,33 @@ func (r *PasteRepo) ListTopPastes(ctx context.Context, limit int) ([]*admin.Past
 	return items, rows.Err()
 }
 
+// SearchPastes searches for public pastes containing the query string.
+func (r *PasteRepo) SearchPastes(ctx context.Context, query string, limit int) ([]*paste.PasteSummary, error) {
+	rows, err := r.readPool.Query(ctx, `
+		SELECT slug, title, language, created_at, expires_at
+		FROM pastes
+		WHERE visibility = 'public'
+		  AND (expires_at IS NULL OR expires_at > NOW())
+		  AND to_tsvector('english', coalesce(title, '') || ' ' || coalesce(content, '')) @@ plainto_tsquery('english', $1)
+		ORDER BY ts_rank(to_tsvector('english', coalesce(title, '') || ' ' || coalesce(content, '')), plainto_tsquery('english', $1)) DESC
+		LIMIT $2
+	`, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var summaries []*paste.PasteSummary
+	for rows.Next() {
+		s := &paste.PasteSummary{}
+		if err := rows.Scan(&s.Slug, &s.Title, &s.Language, &s.CreatedAt, &s.ExpiresAt); err != nil {
+			return nil, err
+		}
+		summaries = append(summaries, s)
+	}
+	return summaries, rows.Err()
+}
+
 
 // FileRepo implements file.FileRepository using pgxpool.
 type FileRepo struct {
@@ -248,6 +300,9 @@ func (r *FileRepo) InsertFile(ctx context.Context, f *paste.FileRecord) error {
 		INSERT INTO files (id, slug, filename, mime_type, size_bytes, storage_key, visibility, password_hash, expires_at, created_at, md5_hash, sha256_hash)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`, f.ID, f.Slug, f.Filename, f.MIMEType, f.SizeBytes, f.StorageKey, f.Visibility, nilIfEmpty(f.PasswordHash), f.ExpiresAt, f.CreatedAt, f.MD5Hash, f.SHA256Hash)
+	if err == nil && r.rdb != nil {
+		r.rdb.Del(ctx, "file:recent")
+	}
 	return err
 }
 
@@ -314,6 +369,17 @@ func (r *FileRepo) GetBySlug(ctx context.Context, slug string) (*paste.FileRecor
 
 // ListPublicRecent returns the most recent public files up to the given limit.
 func (r *FileRepo) ListPublicRecent(ctx context.Context, limit int) ([]*paste.FileSummary, error) {
+	// Serve from cache when possible
+	if r.rdb != nil && limit <= 20 {
+		cached, err := r.rdb.Get(ctx, "file:recent").Bytes()
+		if err == nil {
+			var summaries []*paste.FileSummary
+			if jsonErr := json.Unmarshal(cached, &summaries); jsonErr == nil {
+				return summaries, nil
+			}
+		}
+	}
+
 	rows, err := r.readPool.Query(ctx, `
 		SELECT slug, filename, mime_type, size_bytes, created_at, expires_at
 		FROM files
@@ -335,7 +401,18 @@ func (r *FileRepo) ListPublicRecent(ctx context.Context, limit int) ([]*paste.Fi
 		}
 		summaries = append(summaries, s)
 	}
-	return summaries, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Cache for 60s — fresh enough for the home page
+	if r.rdb != nil && limit <= 20 {
+		if cached, jsonErr := json.Marshal(summaries); jsonErr == nil {
+			r.rdb.Set(ctx, "file:recent", cached, 60*time.Second)
+		}
+	}
+
+	return summaries, nil
 }
 
 // ListAllFiles returns all uploaded files ordered by most recent first.
@@ -399,6 +476,33 @@ func (r *FileRepo) SumFileSizes(ctx context.Context) (int64, error) {
 	var total int64
 	err := r.readPool.QueryRow(ctx, `SELECT COALESCE(SUM(size_bytes), 0) FROM files`).Scan(&total)
 	return total, err
+}
+
+// SearchFiles searches for public files containing the query string in their filename.
+func (r *FileRepo) SearchFiles(ctx context.Context, query string, limit int) ([]*paste.FileSummary, error) {
+	rows, err := r.readPool.Query(ctx, `
+		SELECT slug, filename, mime_type, size_bytes, created_at, expires_at
+		FROM files
+		WHERE visibility = 'public'
+		  AND (expires_at IS NULL OR expires_at > NOW())
+		  AND to_tsvector('english', coalesce(filename, '')) @@ plainto_tsquery('english', $1)
+		ORDER BY ts_rank(to_tsvector('english', coalesce(filename, '')), plainto_tsquery('english', $1)) DESC
+		LIMIT $2
+	`, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var summaries []*paste.FileSummary
+	for rows.Next() {
+		s := &paste.FileSummary{}
+		if err := rows.Scan(&s.Slug, &s.Filename, &s.MIMEType, &s.SizeBytes, &s.CreatedAt, &s.ExpiresAt); err != nil {
+			return nil, err
+		}
+		summaries = append(summaries, s)
+	}
+	return summaries, rows.Err()
 }
 
 // ListTopFiles returns the top limit files by downloads count.

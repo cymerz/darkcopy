@@ -2,6 +2,8 @@ package paste
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"regexp"
 	"strings"
@@ -10,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gthbn/pastebin/internal/access"
 	"github.com/gthbn/pastebin/internal/urlgen"
+	"github.com/redis/go-redis/v9"
 )
 
 // slugPattern allows lowercase letters, digits, and hyphens (3–64 chars).
@@ -38,6 +41,8 @@ type PasteRepository interface {
 	GetBySlug(ctx context.Context, slug string) (*Paste, error)
 	ListPublicRecent(ctx context.Context, limit int) ([]*PasteSummary, error)
 	IncrementViews(ctx context.Context, slug string) error
+	SearchPastes(ctx context.Context, query string, limit int) ([]*PasteSummary, error)
+	DeletePasteBySlug(ctx context.Context, slug string) (bool, error)
 }
 
 
@@ -46,6 +51,7 @@ type Service struct {
 	repo      PasteRepository
 	urlGen    urlgen.URLGenerator
 	accessCtl access.AccessController
+	rdb       *redis.Client
 	now       func() time.Time
 	// maxContentSize, when > 0, overrides MaxContentSize for the size check.
 	// Set via SetMaxContentSizeFunc to support runtime-configurable limits.
@@ -60,6 +66,19 @@ func NewService(repo PasteRepository, urlGen urlgen.URLGenerator, accessCtl acce
 		accessCtl: accessCtl,
 		now:       time.Now,
 	}
+}
+
+// WithRedis sets the Redis client for creator-token verification.
+func (s *Service) WithRedis(rdb *redis.Client) *Service {
+	s.rdb = rdb
+	return s
+}
+
+// generateCreatorToken creates a random hex token for burn-after-read verification.
+func generateCreatorToken() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // SetMaxContentSizeFunc installs a function that returns the current maximum
@@ -82,6 +101,8 @@ func (s *Service) maxContentSize() int64 {
 
 // GetBySlug retrieves a paste by its slug. Returns ErrNotFound if the paste
 // does not exist, and ErrExpired if the paste has passed its expiry time.
+// If the paste has burn_after_read=true and the context does NOT contain
+// skip_burn=true, the paste is deleted immediately after retrieval.
 func (s *Service) GetBySlug(ctx context.Context, slug string) (*Paste, error) {
 	paste, err := s.repo.GetBySlug(ctx, slug)
 	if err != nil {
@@ -90,6 +111,20 @@ func (s *Service) GetBySlug(ctx context.Context, slug string) (*Paste, error) {
 
 	if paste.ExpiresAt != nil && paste.ExpiresAt.Before(s.now()) {
 		return nil, ErrExpired
+	}
+
+	// Burn-after-read: delete the paste after returning it, unless skip_burn is set
+	if paste.BurnAfterRead {
+		skipBurn := false
+		if val := ctx.Value("skip_burn"); val != nil {
+			if b, ok := val.(bool); ok && b {
+				skipBurn = true
+			}
+		}
+		if !skipBurn {
+			// Delete the paste asynchronously to avoid blocking the response
+			go s.repo.DeletePasteBySlug(context.Background(), slug)
+		}
 	}
 
 	return paste, nil
@@ -166,22 +201,56 @@ func (s *Service) Create(ctx context.Context, req CreatePasteRequest) (*Paste, e
 	}
 
 	paste := &Paste{
-		ID:           uuid.New(),
-		Slug:         slug,
-		Title:        req.Title,
-		Content:      req.Content,
-		Language:     req.Language,
-		Visibility:   req.Visibility,
-		PasswordHash: passwordHash,
-		ExpiresAt:    expiresAt,
-		CreatedAt:    now,
+		ID:            uuid.New(),
+		Slug:          slug,
+		Title:         req.Title,
+		Content:       req.Content,
+		Language:      req.Language,
+		Visibility:    req.Visibility,
+		PasswordHash:  passwordHash,
+		ExpiresAt:     expiresAt,
+		CreatedAt:     now,
+		BurnAfterRead: req.BurnAfterRead,
 	}
 
 	if err := s.repo.InsertPaste(ctx, paste); err != nil {
 		return nil, err
 	}
 
+	// Store creator token in Redis for burn-after-read verification
+	if req.BurnAfterRead && s.rdb != nil {
+		token := generateCreatorToken()
+		s.rdb.Set(ctx, "paste:creator:"+slug, token, 10*time.Minute)
+		paste.CreatorToken = token
+	}
+
 	return paste, nil
+}
+
+// VerifyCreatorToken checks if a creator token is valid for the given slug.
+// If valid, the token is consumed (deleted) so it can only be used once.
+func (s *Service) VerifyCreatorToken(ctx context.Context, slug, token string) bool {
+	if s.rdb == nil || token == "" {
+		return false
+	}
+	key := "paste:creator:" + slug
+	stored, err := s.rdb.Get(ctx, key).Result()
+	if err != nil {
+		return false
+	}
+	if stored == token {
+		s.rdb.Del(ctx, key)
+		return true
+	}
+	return false
+}
+
+// SetCreatorToken stores a creator token for burn-after-read verification.
+func (s *Service) SetCreatorToken(ctx context.Context, slug, token string) {
+	if s.rdb == nil {
+		return
+	}
+	s.rdb.Set(ctx, "paste:creator:"+slug, token, 10*time.Minute)
 }
 
 // ValidatePassword checks whether the given password grants access to the paste
@@ -214,5 +283,28 @@ func (s *Service) ValidatePassword(ctx context.Context, slug, password string) (
 // IncrementViews increments the view count of a paste by its slug.
 func (s *Service) IncrementViews(ctx context.Context, slug string) error {
 	return s.repo.IncrementViews(ctx, slug)
+}
+
+// Search searches for public pastes containing the query string.
+func (s *Service) Search(ctx context.Context, query string, limit int) ([]*PasteSummary, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	return s.repo.SearchPastes(ctx, query, limit)
+}
+
+// Fork returns the original paste data so the caller can pre-fill a new paste form.
+// This does NOT create a new paste - that's the caller's responsibility.
+func (s *Service) Fork(ctx context.Context, originalSlug string) (*Paste, error) {
+	paste, err := s.repo.GetBySlug(ctx, originalSlug)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+
+	if paste.ExpiresAt != nil && paste.ExpiresAt.Before(s.now()) {
+		return nil, ErrExpired
+	}
+
+	return paste, nil
 }
 

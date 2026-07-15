@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"net"
 	"net/http"
@@ -46,9 +47,11 @@ func RegisterPasteRoutes(r chi.Router, h *PasteHandler) {
 	r.Get("/", h.HandleIndex)
 	r.Get("/new", h.HandleNewForm)
 	r.Post("/new", h.HandleCreate)
+	r.Get("/search", h.HandleSearch)
 	r.Get("/{slug}", h.HandleView)
 	r.Get("/raw/{slug}", h.HandleRaw)
 	r.Post("/{slug}/unlock", h.HandleUnlock)
+	r.Get("/{slug}/fork", h.HandleFork)
 }
 
 // HandleIndex renders the home page with the list of recent public pastes.
@@ -147,6 +150,7 @@ func (h *PasteHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	expiresInStr := r.FormValue("expires_in")
 	customSlug := strings.TrimSpace(r.FormValue("custom_slug"))
+	burnAfterRead := r.FormValue("burn_after_read") == "true" || r.FormValue("burn_after_read") == "on"
 
 	// Parse expiry duration (in minutes).
 	var expiresIn time.Duration
@@ -171,13 +175,14 @@ func (h *PasteHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := paste.CreatePasteRequest{
-		Content:    content,
-		Language:   language,
-		Title:      title,
-		Visibility: vis,
-		Password:   password,
-		ExpiresIn:  expiresIn,
-		CustomSlug: customSlug,
+		Content:       content,
+		Language:      language,
+		Title:         title,
+		Visibility:    vis,
+		Password:      password,
+		ExpiresIn:     expiresIn,
+		CustomSlug:    customSlug,
+		BurnAfterRead: burnAfterRead,
 	}
 
 	created, err := h.pasteService.Create(r.Context(), req)
@@ -342,8 +347,9 @@ func (h *PasteHandler) HandleUnlock(w http.ResponseWriter, r *http.Request) {
 	// Increment views!
 	_ = h.pasteService.IncrementViews(r.Context(), slug)
 
-	// Fetch the paste to return its content.
-	p, err := h.pasteService.GetBySlug(r.Context(), slug)
+	// Fetch the paste to return its content (skip burn so unlock doesn't auto-delete).
+	ctx := context.WithValue(r.Context(), "skip_burn", true)
+	p, err := h.pasteService.GetBySlug(ctx, slug)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "Failed to load paste", "INTERNAL_ERROR")
 		return
@@ -386,4 +392,53 @@ func extractIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// HandleSearch searches for public pastes containing the query string.
+func (h *PasteHandler) HandleSearch(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		writeJSON(w, http.StatusOK, []*paste.PasteSummary{})
+		return
+	}
+
+	limit := 20
+	if lStr := r.URL.Query().Get("limit"); lStr != "" {
+		if l, err := strconv.Atoi(lStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+
+	results, err := h.pasteService.Search(r.Context(), query, limit)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Search failed", "INTERNAL_ERROR")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, results)
+}
+
+// HandleFork returns the original paste data so the caller can pre-fill a form.
+func (h *PasteHandler) HandleFork(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+
+	p, err := h.pasteService.Fork(r.Context(), slug)
+	if err != nil {
+		if errors.Is(err, paste.ErrNotFound) {
+			writeJSONError(w, http.StatusNotFound, "Paste not found", "NOT_FOUND")
+			return
+		}
+		if errors.Is(err, paste.ErrExpired) {
+			writeJSONError(w, http.StatusGone, "This paste has expired", "RESOURCE_EXPIRED")
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "Failed to fork paste", "INTERNAL_ERROR")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"title":    p.Title,
+		"content":  p.Content,
+		"language": p.Language,
+	})
 }

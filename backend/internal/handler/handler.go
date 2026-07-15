@@ -19,6 +19,8 @@ type PasteService interface {
 	ValidatePassword(ctx context.Context, slug, password string) (bool, error)
 	ListPublicRecent(ctx context.Context, limit int) ([]*paste.PasteSummary, error)
 	IncrementViews(ctx context.Context, slug string) error
+	Search(ctx context.Context, query string, limit int) ([]*paste.PasteSummary, error)
+	Fork(ctx context.Context, originalSlug string) (*paste.Paste, error)
 }
 
 // SyntaxHighlighter defines the interface for syntax highlighting used by the handler.

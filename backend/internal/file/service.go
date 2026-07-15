@@ -76,6 +76,7 @@ type FileRepository interface {
 	GetBySlug(ctx context.Context, slug string) (*paste.FileRecord, error)
 	ListPublicRecent(ctx context.Context, limit int) ([]*paste.FileSummary, error)
 	IncrementDownloads(ctx context.Context, slug string) error
+	SearchFiles(ctx context.Context, query string, limit int) ([]*paste.FileSummary, error)
 }
 
 
@@ -257,6 +258,14 @@ func (s *Service) GetBySlug(ctx context.Context, slug string) (*paste.FileRecord
 // ListPublicRecent returns the most recent public files up to the given limit.
 func (s *Service) ListPublicRecent(ctx context.Context, limit int) ([]*paste.FileSummary, error) {
 	return s.repo.ListPublicRecent(ctx, limit)
+}
+
+// Search searches for public files containing the query string in their filename.
+func (s *Service) Search(ctx context.Context, query string, limit int) ([]*paste.FileSummary, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	return s.repo.SearchFiles(ctx, query, limit)
 }
 
 // ServeFile retrieves a file by slug and streams it to the HTTP response writer

@@ -2,10 +2,13 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import DOMPurify from 'isomorphic-dompurify';
 import { CopyButton } from '@/components/CopyButton';
 import { CountdownTimer } from '@/components/CountdownTimer';
 import { ReportButton } from '@/components/ReportButton';
+import { forkPaste } from '@/lib/api';
+import { APIError } from '@/lib/types';
 import type { PasteViewResponse } from '@/lib/types';
 import { formatRelativeTime, getFileExtension } from '@/lib/utils';
 
@@ -46,6 +49,23 @@ export function PasteViewer({ paste }: PasteViewerProps) {
 
   const lineCount = Math.max(1, paste.content.split('\n').length);
   const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1);
+
+  const router = useRouter();
+  const [isForking, setIsForking] = useState(false);
+
+  const handleFork = async () => {
+    if (isForking) return;
+    setIsForking(true);
+    try {
+      const data = await forkPaste(paste.slug);
+      sessionStorage.setItem('fork_data', JSON.stringify(data));
+      router.push('/new?fork=1');
+    } catch (err) {
+      const msg = err instanceof APIError ? err.message : 'Failed to load paste for forking';
+      alert(msg);
+      setIsForking(false);
+    }
+  };
 
   const handleDownload = () => {
     const extension = getFileExtension(paste.language);
@@ -106,6 +126,10 @@ export function PasteViewer({ paste }: PasteViewerProps) {
           className="inline-flex min-h-[36px] items-center justify-center gap-1.5 border-2 border-surface-variant bg-surface-container-low px-3 py-1.5 text-xs font-mono text-on-surface-variant transition-all hover:border-secondary hover:text-secondary">
           QR CODE
         </Link>
+        <button type="button" onClick={handleFork} disabled={isForking}
+          className="inline-flex min-h-[36px] items-center justify-center gap-1.5 border-2 border-surface-variant bg-surface-container-low px-3 py-1.5 text-xs font-mono text-on-surface-variant transition-all hover:border-secondary hover:text-secondary active:translate-y-[1px] disabled:opacity-60">
+          {isForking ? 'LOADING...' : 'FORK'}
+        </button>
         <div className="mx-1 h-5 w-px bg-surface-variant" aria-hidden="true" />
         <button type="button" onClick={() => setShowHighlighting((v) => !v)}
           aria-pressed={showHighlighting}

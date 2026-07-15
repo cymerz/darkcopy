@@ -27,6 +27,7 @@ type FileService interface {
 	ListPublicRecent(ctx context.Context, limit int) ([]*paste.FileSummary, error)
 	PresignDownloadURL(ctx context.Context, slug string, inline bool) (string, error)
 	IncrementDownloads(ctx context.Context, slug string) error
+	Search(ctx context.Context, query string, limit int) ([]*paste.FileSummary, error)
 
 	// Direct S3 upload methods
 	SupportsUploadPresigning() bool
@@ -89,6 +90,7 @@ func RegisterFileRoutes(r chi.Router, h *FileHandler) {
 	r.Post("/upload", h.HandleUpload)
 	r.Post("/upload/presign", h.HandlePresignUpload)
 	r.Post("/upload/register", h.HandleRegisterUploadedFile)
+	r.Get("/f/search", h.HandleSearchFiles)
 	r.Get("/f/{slug}", h.GetFile)
 	r.Head("/f/{slug}", h.GetFile)
 	r.Get("/f/{slug}/direct", h.DirectDownload)
@@ -826,3 +828,28 @@ func formatBytes(b int64) string {
 	}
 	return fmt.Sprintf("%d bytes", b)
 }
+
+// HandleSearchFiles searches for public files containing the query string in their filename.
+func (h *FileHandler) HandleSearchFiles(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		writeJSON(w, http.StatusOK, []*paste.FileSummary{})
+		return
+	}
+
+	limit := 20
+	if lStr := r.URL.Query().Get("limit"); lStr != "" {
+		if l, err := strconv.Atoi(lStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+
+	results, err := h.fileService.Search(r.Context(), query, limit)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Search failed", "INTERNAL_ERROR")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, results)
+}
+
