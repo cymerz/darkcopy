@@ -7,7 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/gthbn/pastebin/internal/settings"
+	"github.com/cymerz/darkcopy/internal/settings"
 )
 
 // SettingsRepo persists application settings in the single-row app_settings

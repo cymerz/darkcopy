@@ -5,7 +5,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/gthbn/pastebin/internal/paste"
+	"github.com/cymerz/darkcopy/internal/paste"
 )
 
 // FileService defines the interface for file upload and retrieval operations.

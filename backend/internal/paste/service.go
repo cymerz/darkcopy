@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/gthbn/pastebin/internal/access"
-	"github.com/gthbn/pastebin/internal/urlgen"
+	"github.com/cymerz/darkcopy/internal/access"
+	"github.com/cymerz/darkcopy/internal/urlgen"
 	"github.com/redis/go-redis/v9"
 )
 

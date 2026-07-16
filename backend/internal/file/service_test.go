@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gthbn/pastebin/internal/paste"
+	"github.com/cymerz/darkcopy/internal/paste"
 	"golang.org/x/crypto/bcrypt"
 )
 

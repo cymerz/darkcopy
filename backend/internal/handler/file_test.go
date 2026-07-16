@@ -15,10 +15,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/gthbn/pastebin/internal/file"
-	"github.com/gthbn/pastebin/internal/paste"
-	"github.com/gthbn/pastebin/internal/quota"
-	"github.com/gthbn/pastebin/internal/settings"
+	"github.com/cymerz/darkcopy/internal/file"
+	"github.com/cymerz/darkcopy/internal/paste"
+	"github.com/cymerz/darkcopy/internal/quota"
+	"github.com/cymerz/darkcopy/internal/settings"
 )
 
 // mockFileService is a mock implementation of FileService for testing.

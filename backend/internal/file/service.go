@@ -18,9 +18,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/gthbn/pastebin/internal/access"
-	"github.com/gthbn/pastebin/internal/paste"
-	"github.com/gthbn/pastebin/internal/urlgen"
+	"github.com/cymerz/darkcopy/internal/access"
+	"github.com/cymerz/darkcopy/internal/paste"
+	"github.com/cymerz/darkcopy/internal/urlgen"
 	"golang.org/x/crypto/bcrypt"
 )
 

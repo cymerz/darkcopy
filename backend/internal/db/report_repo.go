@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/gthbn/pastebin/internal/report"
+	"github.com/cymerz/darkcopy/internal/report"
 )
 
 // ReportRepo implements report.Repository using pgxpool.

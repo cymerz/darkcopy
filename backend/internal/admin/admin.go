@@ -9,7 +9,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/gthbn/pastebin/internal/paste"
+	"github.com/cymerz/darkcopy/internal/paste"
 )
 
 // ErrNotFound is returned when the requested item does not exist.

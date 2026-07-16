@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/gthbn/pastebin/internal/paste"
+	"github.com/cymerz/darkcopy/internal/paste"
 )
 
 // PasteHandler handles HTTP requests for paste operations.

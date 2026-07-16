@@ -9,7 +9,7 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
-	"github.com/gthbn/pastebin/internal/paste"
+	"github.com/cymerz/darkcopy/internal/paste"
 )
 
 func TestRedisCachingAndBuffering(t *testing.T) {

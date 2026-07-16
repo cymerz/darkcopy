@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/gthbn/pastebin/internal/file"
-	"github.com/gthbn/pastebin/internal/paste"
+	"github.com/cymerz/darkcopy/internal/file"
+	"github.com/cymerz/darkcopy/internal/paste"
 )
 
 // FileService defines the interface for file operations used by the handler.

@@ -10,9 +10,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/gthbn/pastebin/internal/admin"
-	"github.com/gthbn/pastebin/internal/report"
-	"github.com/gthbn/pastebin/internal/settings"
+	"github.com/cymerz/darkcopy/internal/admin"
+	"github.com/cymerz/darkcopy/internal/report"
+	"github.com/cymerz/darkcopy/internal/settings"
 )
 
 // AdminService defines the administrative operations used by the handler.

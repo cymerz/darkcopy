@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gthbn/pastebin/internal/highlight"
-	"github.com/gthbn/pastebin/internal/paste"
-	"github.com/gthbn/pastebin/internal/settings"
+	"github.com/cymerz/darkcopy/internal/highlight"
+	"github.com/cymerz/darkcopy/internal/paste"
+	"github.com/cymerz/darkcopy/internal/settings"
 )
 
 // PasteService defines the interface for paste operations used by the handler.

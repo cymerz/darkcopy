@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gthbn/pastebin/internal/access"
+	"github.com/cymerz/darkcopy/internal/access"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -31,6 +31,12 @@ type mockRepository struct {
 
 	listPublicRecentResult []*PasteSummary
 	listPublicRecentErr    error
+
+	searchPastesResult []*PasteSummary
+	searchPastesErr    error
+
+	deletedSlug string
+	deleteErr   error
 }
 
 func (m *mockRepository) InsertPaste(ctx context.Context, paste *Paste) error {
@@ -54,6 +60,21 @@ func (m *mockRepository) ListPublicRecent(ctx context.Context, limit int) ([]*Pa
 
 func (m *mockRepository) IncrementViews(ctx context.Context, slug string) error {
 	return nil
+}
+
+func (m *mockRepository) SearchPastes(ctx context.Context, query string, limit int) ([]*PasteSummary, error) {
+	if m.searchPastesErr != nil {
+		return nil, m.searchPastesErr
+	}
+	return m.searchPastesResult, nil
+}
+
+func (m *mockRepository) DeletePasteBySlug(ctx context.Context, slug string) (bool, error) {
+	m.deletedSlug = slug
+	if m.deleteErr != nil {
+		return false, m.deleteErr
+	}
+	return true, nil
 }
 
 

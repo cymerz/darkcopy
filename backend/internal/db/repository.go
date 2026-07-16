@@ -9,9 +9,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
-	"github.com/gthbn/pastebin/internal/admin"
-	"github.com/gthbn/pastebin/internal/expiry"
-	"github.com/gthbn/pastebin/internal/paste"
+	"github.com/cymerz/darkcopy/internal/admin"
+	"github.com/cymerz/darkcopy/internal/expiry"
+	"github.com/cymerz/darkcopy/internal/paste"
 )
 
 // PasteRepo implements paste.PasteRepository using pgxpool.
