@@ -211,6 +211,7 @@ func (s *Service) Create(ctx context.Context, req CreatePasteRequest) (*Paste, e
 		ExpiresAt:     expiresAt,
 		CreatedAt:     now,
 		BurnAfterRead: req.BurnAfterRead,
+		IsEncrypted:   req.IsEncrypted,
 	}
 
 	if err := s.repo.InsertPaste(ctx, paste); err != nil {

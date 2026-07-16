@@ -96,7 +96,7 @@ export default async function PasteViewPage({
 
   let paste: PasteViewResponse;
   try {
-    paste = await getPaste(slug);
+    paste = await getPaste(slug, true);
   } catch (error) {
     if (error instanceof APIError) {
       if (error.status === 404) notFound();

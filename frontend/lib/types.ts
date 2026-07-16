@@ -82,6 +82,8 @@ export interface PasteViewResponse {
   expires_at: string | null;
   remaining_seconds: number | null;
   views: number;
+  is_encrypted: boolean;
+  burn_after_read: boolean;
 }
 
 /**

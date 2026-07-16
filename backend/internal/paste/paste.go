@@ -33,6 +33,7 @@ type Paste struct {
 	Views         int
 	BurnAfterRead bool
 	CreatorToken  string // one-time token to skip burn on first view; empty if burned or not burn-after-read
+	IsEncrypted   bool
 }
 
 
@@ -65,6 +66,7 @@ type CreatePasteRequest struct {
 	ExpiresIn     time.Duration // 0 = use default (24h)
 	CustomSlug    string        // optional; if empty a random slug is generated
 	BurnAfterRead bool
+	IsEncrypted   bool
 }
 
 // FileRecord represents a stored file's metadata.

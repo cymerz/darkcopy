@@ -41,9 +41,9 @@ func (r *PasteRepo) WithRedis(rdb *redis.Client) *PasteRepo {
 // InsertPaste inserts a new paste into the database.
 func (r *PasteRepo) InsertPaste(ctx context.Context, p *paste.Paste) error {
 	_, err := r.writePool.Exec(ctx, `
-		INSERT INTO pastes (id, slug, title, content, language, visibility, password_hash, expires_at, created_at, burn_after_read)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-	`, p.ID, p.Slug, p.Title, p.Content, p.Language, p.Visibility, nilIfEmpty(p.PasswordHash), p.ExpiresAt, p.CreatedAt, p.BurnAfterRead)
+		INSERT INTO pastes (id, slug, title, content, language, visibility, password_hash, expires_at, created_at, burn_after_read, is_encrypted)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, p.ID, p.Slug, p.Title, p.Content, p.Language, p.Visibility, nilIfEmpty(p.PasswordHash), p.ExpiresAt, p.CreatedAt, p.BurnAfterRead, p.IsEncrypted)
 	if err == nil && r.rdb != nil {
 		r.rdb.Del(ctx, "paste:recent")
 	}
@@ -76,9 +76,9 @@ func (r *PasteRepo) GetBySlug(ctx context.Context, slug string) (*paste.Paste, e
 	p := &paste.Paste{}
 	var passwordHash *string
 	err := r.readPool.QueryRow(ctx, `
-		SELECT id, slug, title, content, language, visibility, password_hash, expires_at, created_at, views, burn_after_read
+		SELECT id, slug, title, content, language, visibility, password_hash, expires_at, created_at, views, burn_after_read, is_encrypted
 		FROM pastes WHERE slug = $1
-	`, slug).Scan(&p.ID, &p.Slug, &p.Title, &p.Content, &p.Language, &p.Visibility, &passwordHash, &p.ExpiresAt, &p.CreatedAt, &p.Views, &p.BurnAfterRead)
+	`, slug).Scan(&p.ID, &p.Slug, &p.Title, &p.Content, &p.Language, &p.Visibility, &passwordHash, &p.ExpiresAt, &p.CreatedAt, &p.Views, &p.BurnAfterRead, &p.IsEncrypted)
 	if err != nil {
 		return nil, err
 	}

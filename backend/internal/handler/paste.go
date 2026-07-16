@@ -151,6 +151,7 @@ func (h *PasteHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	expiresInStr := r.FormValue("expires_in")
 	customSlug := strings.TrimSpace(r.FormValue("custom_slug"))
 	burnAfterRead := r.FormValue("burn_after_read") == "true" || r.FormValue("burn_after_read") == "on"
+	isEncrypted := r.FormValue("is_encrypted") == "true" || r.FormValue("is_encrypted") == "on"
 
 	// Parse expiry duration (in minutes).
 	var expiresIn time.Duration
@@ -183,6 +184,7 @@ func (h *PasteHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		ExpiresIn:     expiresIn,
 		CustomSlug:    customSlug,
 		BurnAfterRead: burnAfterRead,
+		IsEncrypted:   isEncrypted,
 	}
 
 	created, err := h.pasteService.Create(r.Context(), req)
@@ -236,8 +238,14 @@ func (h *PasteHandler) HandleRaw(w http.ResponseWriter, r *http.Request) {
 // HandleView displays a paste by its slug.
 func (h *PasteHandler) HandleView(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
+	peek := r.URL.Query().Get("peek") == "true"
 
-	p, err := h.pasteService.GetBySlug(r.Context(), slug)
+	ctx := r.Context()
+	if peek {
+		ctx = context.WithValue(ctx, "skip_burn", true)
+	}
+
+	p, err := h.pasteService.GetBySlug(ctx, slug)
 	if err != nil {
 		if errors.Is(err, paste.ErrNotFound) {
 			writeJSONError(w, http.StatusNotFound, "Paste not found", "NOT_FOUND")
@@ -259,19 +267,37 @@ func (h *PasteHandler) HandleView(w http.ResponseWriter, r *http.Request) {
 			"status":            http.StatusUnauthorized,
 			"password_required": true,
 			"slug":              p.Slug,
+			"is_encrypted":      p.IsEncrypted,
+			"burn_after_read":   p.BurnAfterRead,
 		})
 		return
 	}
 
-	// Highlight the content.
-	highlighted, err := h.highlighter.Highlight(p.Content, p.Language)
-	if err != nil {
-		highlighted = p.Content
+	content := p.Content
+	highlighted := ""
+
+	// If it's a peek request and the paste is burn-after-read, hide the content.
+	if peek && p.BurnAfterRead {
+		content = ""
+	} else {
+		// Highlight the content unless it is client-side encrypted
+		if p.IsEncrypted {
+			highlighted = p.Content
+		} else {
+			hl, err := h.highlighter.Highlight(p.Content, p.Language)
+			if err != nil {
+				highlighted = p.Content
+			} else {
+				highlighted = hl
+			}
+		}
 	}
 
-	// Increment views!
-	_ = h.pasteService.IncrementViews(r.Context(), slug)
-	p.Views++
+	if !peek {
+		// Increment views!
+		_ = h.pasteService.IncrementViews(r.Context(), slug)
+		p.Views++
+	}
 
 	// Calculate remaining time until expiry.
 	var remainingSeconds *int64
@@ -284,7 +310,7 @@ func (h *PasteHandler) HandleView(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"slug":              p.Slug,
 		"title":             p.Title,
-		"content":           p.Content,
+		"content":           content,
 		"highlighted_html":  highlighted,
 		"language":          p.Language,
 		"visibility":        p.Visibility,
@@ -292,6 +318,8 @@ func (h *PasteHandler) HandleView(w http.ResponseWriter, r *http.Request) {
 		"expires_at":        p.ExpiresAt,
 		"remaining_seconds": remainingSeconds,
 		"views":             p.Views,
+		"is_encrypted":      p.IsEncrypted,
+		"burn_after_read":   p.BurnAfterRead,
 	})
 }
 
@@ -347,18 +375,25 @@ func (h *PasteHandler) HandleUnlock(w http.ResponseWriter, r *http.Request) {
 	// Increment views!
 	_ = h.pasteService.IncrementViews(r.Context(), slug)
 
-	// Fetch the paste to return its content (skip burn so unlock doesn't auto-delete).
-	ctx := context.WithValue(r.Context(), "skip_burn", true)
+	// Fetch the paste to return its content (if it's burn-after-read, do not skip burn so it deletes).
+	ctx := r.Context()
 	p, err := h.pasteService.GetBySlug(ctx, slug)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "Failed to load paste", "INTERNAL_ERROR")
 		return
 	}
 
-	// Highlight the content.
-	highlighted, err := h.highlighter.Highlight(p.Content, p.Language)
-	if err != nil {
+	// Highlight the content unless E2EE.
+	highlighted := ""
+	if p.IsEncrypted {
 		highlighted = p.Content
+	} else {
+		hl, err := h.highlighter.Highlight(p.Content, p.Language)
+		if err != nil {
+			highlighted = p.Content
+		} else {
+			highlighted = hl
+		}
 	}
 
 	var remainingSeconds *int64
@@ -379,6 +414,8 @@ func (h *PasteHandler) HandleUnlock(w http.ResponseWriter, r *http.Request) {
 		"expires_at":        p.ExpiresAt,
 		"remaining_seconds": remainingSeconds,
 		"views":             p.Views,
+		"is_encrypted":      p.IsEncrypted,
+		"burn_after_read":   p.BurnAfterRead,
 	})
 }
 

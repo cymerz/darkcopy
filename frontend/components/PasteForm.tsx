@@ -6,6 +6,7 @@ import { createPaste } from '@/lib/api';
 import { APIError } from '@/lib/types';
 import { CopyButton } from '@/components/CopyButton';
 import type { ExpiryOption, Language } from '@/lib/types';
+import { generateEncryptionKey, encryptText } from '@/lib/crypto';
 
 interface PasteFormProps {
   languages: Language[];
@@ -49,6 +50,7 @@ export function PasteForm({ languages, expiryOptions, disabled }: PasteFormProps
   const [password, setPassword] = useState('');
   const [customSlug, setCustomSlug] = useState('');
   const [burnAfterRead, setBurnAfterRead] = useState(false);
+  const [isEncrypted, setIsEncrypted] = useState(false);
 
   const origin = useSyncExternalStore(
     () => () => {},
@@ -92,8 +94,16 @@ export function PasteForm({ languages, expiryOptions, disabled }: PasteFormProps
     setIsSubmitting(true);
 
     try {
+      let finalContent = content;
+      let encryptionKey = '';
+
+      if (isEncrypted) {
+        encryptionKey = await generateEncryptionKey();
+        finalContent = await encryptText(content, encryptionKey);
+      }
+
       const formData = new URLSearchParams();
-      formData.append('content', content);
+      formData.append('content', finalContent);
       formData.append('title', title);
       formData.append('language', language);
       formData.append('expires_in', expiresIn);
@@ -101,6 +111,7 @@ export function PasteForm({ languages, expiryOptions, disabled }: PasteFormProps
       if (customSlug.trim()) formData.append('custom_slug', customSlug.trim().toLowerCase());
       if (visibility === 'password_protected') formData.append('password', password);
       if (burnAfterRead) formData.append('burn_after_read', 'true');
+      if (isEncrypted) formData.append('is_encrypted', 'true');
 
       const result = await createPaste(formData);
       const slug = resolveSlug(result);
@@ -109,12 +120,17 @@ export function PasteForm({ languages, expiryOptions, disabled }: PasteFormProps
       // Burn-after-read: show URL on this page, never redirect to view
       if (burnAfterRead) {
         const base = typeof window !== 'undefined' ? window.location.origin : '';
-        setCreatedURL(result.url ? `${base}${result.url}` : `${base}/${slug}`);
+        let url = result.url ? `${base}${result.url}` : `${base}/${slug}`;
+        if (isEncrypted) {
+          url += `#key=${encryptionKey}`;
+        }
+        setCreatedURL(url);
         setIsSubmitting(false);
         return;
       }
 
-      router.push(`/${slug}`);
+      const redirectPath = isEncrypted ? `/${slug}#key=${encryptionKey}` : `/${slug}`;
+      router.push(redirectPath);
     } catch (err) {
       setError(err instanceof APIError ? err.message : 'An error occurred while creating the paste.');
       setIsSubmitting(false);
@@ -264,20 +280,33 @@ export function PasteForm({ languages, expiryOptions, disabled }: PasteFormProps
         </div>
       </fieldset>
 
-      {/* Burn After Reading */}
+      {/* Options */}
       <div className="space-y-2">
         <span className="text-label-caps text-secondary block">OPTIONS</span>
-        <label className="flex min-h-[44px] cursor-pointer items-center gap-3 border-2 border-surface-variant bg-surface-container-lowest px-4 py-2.5 text-sm font-mono text-on-surface transition-colors hover:border-secondary has-[:checked]:border-secondary has-[:checked]:bg-secondary/10">
-          <input
-            type="checkbox"
-            name="burn_after_read"
-            checked={burnAfterRead}
-            onChange={(e) => setBurnAfterRead(e.target.checked)}
-            disabled={isFormDisabled}
-            className="appearance-none w-4 h-4 border-2 border-surface-variant rounded-sm checked:border-secondary checked:shadow-[inset_0_0_0_2px_#4cd7f6] checked:bg-secondary transition-all"
-          />
-          BURN AFTER READING
-        </label>
+        <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:gap-3">
+          <label className="flex flex-1 min-h-[44px] cursor-pointer items-center gap-3 border-2 border-surface-variant bg-surface-container-lowest px-4 py-2.5 text-sm font-mono text-on-surface transition-colors hover:border-secondary has-[:checked]:border-secondary has-[:checked]:bg-secondary/10">
+            <input
+              type="checkbox"
+              name="burn_after_read"
+              checked={burnAfterRead}
+              onChange={(e) => setBurnAfterRead(e.target.checked)}
+              disabled={isFormDisabled}
+              className="appearance-none w-4 h-4 border-2 border-surface-variant rounded-sm checked:border-secondary checked:shadow-[inset_0_0_0_2px_#4cd7f6] checked:bg-secondary transition-all"
+            />
+            BURN AFTER READING
+          </label>
+          <label className="flex flex-1 min-h-[44px] cursor-pointer items-center gap-3 border-2 border-surface-variant bg-surface-container-lowest px-4 py-2.5 text-sm font-mono text-on-surface transition-colors hover:border-secondary has-[:checked]:border-secondary has-[:checked]:bg-secondary/10">
+            <input
+              type="checkbox"
+              name="is_encrypted"
+              checked={isEncrypted}
+              onChange={(e) => setIsEncrypted(e.target.checked)}
+              disabled={isFormDisabled}
+              className="appearance-none w-4 h-4 border-2 border-surface-variant rounded-sm checked:border-secondary checked:shadow-[inset_0_0_0_2px_#4cd7f6] checked:bg-secondary transition-all"
+            />
+            ENCRYPT PASTE (E2EE)
+          </label>
+        </div>
       </div>
 
       {/* Conditional password */}

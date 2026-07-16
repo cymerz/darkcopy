@@ -125,8 +125,9 @@ export async function createPaste(
  *
  * Uses `cache: 'no-store'` so Next.js Server Components always re-fetch.
  */
-export async function getPaste(slug: string): Promise<PasteViewResponse> {
-  return apiFetch<PasteViewResponse>(`/${slug}`, { cache: 'no-store' });
+export async function getPaste(slug: string, peek?: boolean): Promise<PasteViewResponse> {
+  const query = peek ? '?peek=true' : '';
+  return apiFetch<PasteViewResponse>(`/${slug}${query}`, { cache: 'no-store' });
 }
 
 /**
