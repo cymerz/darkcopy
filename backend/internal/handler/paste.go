@@ -359,10 +359,12 @@ func getBaseURL(r *http.Request) string {
 		scheme = "https"
 	}
 
-	// SECURITY: Only use r.Host to prevent Host Header Injection/SSRF.
-	// We ignore X-Forwarded-Host to ensure the generated links match the host
-	// that Go's HTTP server is bound to or sees.
-	host := r.Host
+	// Read X-Forwarded-Host first (set by trusted Nginx or Next.js proxy),
+	// fall back to r.Host (only works when backend is directly accessible).
+	host := r.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = r.Host
+	}
 	if host == "" {
 		host = "localhost:8080"
 	}
