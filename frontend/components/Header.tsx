@@ -14,6 +14,7 @@ const NAV_LINKS: NavLink[] = [
   { href: '/', label: 'Home' },
   { href: '/new', label: 'Create Paste' },
   { href: '/upload', label: 'Upload File' },
+  { href: '/docs', label: 'API Docs' },
 ];
 
 function isActivePath(pathname: string | null, href: string): boolean {

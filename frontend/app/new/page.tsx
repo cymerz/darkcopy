@@ -18,11 +18,13 @@ export default async function NewPastePage() {
   }
 
   return (
-    <section>
-      <h1 className="font-display text-headline-lg text-secondary mb-6 drop-shadow-[0_0_15px_rgba(76,215,246,0.3)]">
-        {'>'} INITIALIZE_PASTE.EXE
-      </h1>
-      <PasteForm languages={languages} expiryOptions={expiryOptions} disabled={disableNewPastes} />
+    <section className="space-y-12">
+      <div>
+        <h1 className="font-display text-headline-lg text-secondary mb-6 drop-shadow-[0_0_15px_rgba(76,215,246,0.3)]">
+          {'>'} INITIALIZE_PASTE.EXE
+        </h1>
+        <PasteForm languages={languages} expiryOptions={expiryOptions} disabled={disableNewPastes} />
+      </div>
     </section>
   );
 }

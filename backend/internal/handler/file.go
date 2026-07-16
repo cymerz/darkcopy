@@ -293,6 +293,13 @@ func (h *FileHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if wantsPlain(r) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(getBaseURL(r) + "/f/" + record.Slug + "\n"))
+		return
+	}
+
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"success":  true,
 		"slug":     record.Slug,

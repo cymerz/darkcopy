@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -45,8 +46,10 @@ func (h *PasteHandler) SetQuota(q DailyQuota) { h.quota = q }
 // RegisterPasteRoutes registers all paste-related routes on the given chi router.
 func RegisterPasteRoutes(r chi.Router, h *PasteHandler) {
 	r.Get("/", h.HandleIndex)
+	r.Post("/", h.HandleCreate)
 	r.Get("/new", h.HandleNewForm)
 	r.Post("/new", h.HandleCreate)
+	r.Post("/pastes", h.HandleCreate)
 	r.Get("/search", h.HandleSearch)
 	r.Get("/{slug}", h.HandleView)
 	r.Get("/raw/{slug}", h.HandleRaw)
@@ -121,14 +124,97 @@ func (h *PasteHandler) pasteExpiryOptions() []map[string]interface{} {
 func (h *PasteHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	// Enforce temporary disable setting
 	if h.settings != nil && h.settings.Get().DisableNewPastes {
+		if wantsPlain(r) {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte("Error: New paste creation is disabled\n"))
+			return
+		}
 		writeJSONError(w, http.StatusForbidden, "New paste creation has been temporarily disabled by the administrator.", "PASTES_DISABLED")
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
-	if err := r.ParseForm(); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "Invalid form", "BAD_REQUEST")
-		return
+
+	var content string
+	var language string
+	var title string
+	var visibility string
+	var password string
+	var expiresInStr string
+	var customSlug string
+	var burnAfterRead bool
+	var isEncrypted bool
+
+	contentType := r.Header.Get("Content-Type")
+	isForm := strings.Contains(contentType, "application/x-www-form-urlencoded")
+	isMultipart := strings.Contains(contentType, "multipart/form-data")
+
+	if isForm {
+		// Use Go's built-in form parsing which respects MaxBytesReader limit
+		if err := r.ParseForm(); err != nil {
+			if wantsPlain(r) {
+				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte("Error: Invalid form payload\n"))
+				return
+			}
+			writeJSONError(w, http.StatusBadRequest, "Invalid form", "BAD_REQUEST")
+			return
+		}
+		content = r.FormValue("content")
+		language = r.FormValue("language")
+		title = r.FormValue("title")
+		visibility = r.FormValue("visibility")
+		password = r.FormValue("password")
+		expiresInStr = r.FormValue("expires_in")
+		customSlug = strings.TrimSpace(r.FormValue("custom_slug"))
+		burnAfterRead = r.FormValue("burn_after_read") == "true" || r.FormValue("burn_after_read") == "on"
+		isEncrypted = r.FormValue("is_encrypted") == "true" || r.FormValue("is_encrypted") == "on"
+	} else if isMultipart {
+		// Parse multipart form up to a strict 1MB limit to prevent DoS
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			if wantsPlain(r) {
+				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte("Error: Invalid multipart form submission\n"))
+				return
+			}
+			writeJSONError(w, http.StatusBadRequest, "Invalid multipart form", "BAD_REQUEST")
+			return
+		}
+		content = r.FormValue("content")
+		language = r.FormValue("language")
+		title = r.FormValue("title")
+		visibility = r.FormValue("visibility")
+		password = r.FormValue("password")
+		expiresInStr = r.FormValue("expires_in")
+		customSlug = strings.TrimSpace(r.FormValue("custom_slug"))
+		burnAfterRead = r.FormValue("burn_after_read") == "true" || r.FormValue("burn_after_read") == "on"
+		isEncrypted = r.FormValue("is_encrypted") == "true" || r.FormValue("is_encrypted") == "on"
+	} else {
+		// Raw plain text or arbitrary payload (e.g. curl command piping raw content)
+		// We read the body safely up to the 1MB limit.
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			if wantsPlain(r) {
+				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte("Error: Failed to read body\n"))
+				return
+			}
+			writeJSONError(w, http.StatusBadRequest, "Failed to read request body", "BAD_REQUEST")
+			return
+		}
+		content = string(bodyBytes)
+		language = r.URL.Query().Get("language")
+		title = r.URL.Query().Get("title")
+		visibility = r.URL.Query().Get("visibility")
+		password = r.URL.Query().Get("password")
+		expiresInStr = r.URL.Query().Get("expires_in")
+		customSlug = strings.TrimSpace(r.URL.Query().Get("custom_slug"))
+		burnAfterRead = r.URL.Query().Get("burn_after_read") == "true" || r.URL.Query().Get("burn_after_read") == "on"
+		isEncrypted = r.URL.Query().Get("is_encrypted") == "true" || r.URL.Query().Get("is_encrypted") == "on"
 	}
 
 	// Enforce per-IP daily paste-creation limit when configured.
@@ -137,21 +223,17 @@ func (h *PasteHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		if limit > 0 {
 			key := "paste:" + extractIP(r)
 			if allowed, _ := h.quota.Allow(key, limit); !allowed {
+				if wantsPlain(r) {
+					w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+					w.WriteHeader(http.StatusTooManyRequests)
+					_, _ = w.Write([]byte("Error: Daily paste creation limit reached\n"))
+					return
+				}
 				writeJSONError(w, http.StatusTooManyRequests, "Daily paste creation limit reached. Try again tomorrow.", "DAILY_LIMIT_REACHED")
 				return
 			}
 		}
 	}
-
-	content := r.FormValue("content")
-	language := r.FormValue("language")
-	title := r.FormValue("title")
-	visibility := r.FormValue("visibility")
-	password := r.FormValue("password")
-	expiresInStr := r.FormValue("expires_in")
-	customSlug := strings.TrimSpace(r.FormValue("custom_slug"))
-	burnAfterRead := r.FormValue("burn_after_read") == "true" || r.FormValue("burn_after_read") == "on"
-	isEncrypted := r.FormValue("is_encrypted") == "true" || r.FormValue("is_encrypted") == "on"
 
 	// Parse expiry duration (in minutes).
 	var expiresIn time.Duration
@@ -189,7 +271,21 @@ func (h *PasteHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 	created, err := h.pasteService.Create(r.Context(), req)
 	if err != nil {
+		if wantsPlain(r) {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte("Error: " + err.Error() + "\n"))
+			return
+		}
 		writeJSONError(w, http.StatusBadRequest, err.Error(), "VALIDATION_ERROR")
+		return
+	}
+
+	// If it is CLI or text/plain request, return absolute URL as plain text.
+	if wantsPlain(r) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(getBaseURL(r) + "/" + created.Slug + "\n"))
 		return
 	}
 
@@ -204,6 +300,41 @@ func (h *PasteHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 	// Otherwise redirect to the newly created paste.
 	http.Redirect(w, r, "/"+created.Slug, http.StatusSeeOther)
+}
+
+func isCLIClient(r *http.Request) bool {
+	ua := strings.ToLower(r.Header.Get("User-Agent"))
+	return strings.HasPrefix(ua, "curl") ||
+		strings.HasPrefix(ua, "wget") ||
+		strings.HasPrefix(ua, "httpie")
+}
+
+func wantsPlain(r *http.Request) bool {
+	return isCLIClient(r) ||
+		r.URL.Query().Get("cli") == "true" ||
+		strings.Contains(r.Header.Get("Accept"), "text/plain")
+}
+
+func getBaseURL(r *http.Request) string {
+	scheme := "http"
+	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		scheme = proto
+	} else if r.TLS != nil {
+		scheme = "https"
+	}
+
+	// SECURITY: Only use r.Host to prevent Host Header Injection/SSRF.
+	// We ignore X-Forwarded-Host to ensure the generated links match the host
+	// that Go's HTTP server is bound to or sees.
+	host := r.Host
+	if host == "" {
+		host = "localhost:8080"
+	}
+
+	// Strip CRLF and tabs to prevent response splitting/header injection.
+	host = strings.NewReplacer("\n", "", "\r", "", "\t", "").Replace(host)
+
+	return scheme + "://" + host
 }
 
 // HandleRaw serves the raw paste content as plain text.

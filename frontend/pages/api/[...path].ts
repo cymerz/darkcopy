@@ -57,6 +57,13 @@ export default function handler(req: IncomingMessage, res: ServerResponse) {
     }
   }
 
+  // Inject host and proto proxy headers using Next.js config info
+  // Do not trust incoming x-forwarded-host / proto directly to prevent spoofing
+  if (req.headers['host']) {
+    headers['x-forwarded-host'] = req.headers['host'];
+  }
+  headers['x-forwarded-proto'] = (req.socket as any).encrypted ? 'https' : 'http';
+
   const proxyReq = http.request(
     {
       hostname: targetUrl.hostname,

@@ -781,3 +781,68 @@ func TestHandleCreate_Disabled(t *testing.T) {
 		t.Errorf("expected status 403 Forbidden, got %d", rec.Code)
 	}
 }
+
+func TestHandleCreate_CLITextRaw_Succeeds(t *testing.T) {
+	ps := &mockPasteService{
+		createFn: func(ctx context.Context, req paste.CreatePasteRequest) (*paste.Paste, error) {
+			if req.Content != "raw content" {
+				t.Errorf("expected raw content, got %q", req.Content)
+			}
+			return &paste.Paste{
+				Slug: "rawslug1",
+			}, nil
+		},
+	}
+	h := NewPasteHandler(ps, &mockHighlighter{}, &mockAccessController{}, nil)
+	router := setupRouter(h)
+
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("raw content"))
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("User-Agent", "curl/7.79.1")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Errorf("expected status 201 Created, got %d", rec.Code)
+	}
+
+	body := strings.TrimSpace(rec.Body.String())
+	if !strings.HasSuffix(body, "/rawslug1") {
+		t.Errorf("expected plain text link ending in /rawslug1, got %q", body)
+	}
+}
+
+func TestHandleCreate_CLITextForm_Succeeds(t *testing.T) {
+	ps := &mockPasteService{
+		createFn: func(ctx context.Context, req paste.CreatePasteRequest) (*paste.Paste, error) {
+			if req.Content != "form content" {
+				t.Errorf("expected form content, got %q", req.Content)
+			}
+			return &paste.Paste{
+				Slug: "formslug1",
+			}, nil
+		},
+	}
+	h := NewPasteHandler(ps, &mockHighlighter{}, &mockAccessController{}, nil)
+	router := setupRouter(h)
+
+	form := url.Values{}
+	form.Set("content", "form content")
+
+	req := httptest.NewRequest(http.MethodPost, "/pastes", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", "curl/7.79.1")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Errorf("expected status 201 Created, got %d", rec.Code)
+	}
+
+	body := strings.TrimSpace(rec.Body.String())
+	if !strings.HasSuffix(body, "/formslug1") {
+		t.Errorf("expected plain text link ending in /formslug1, got %q", body)
+	}
+}
