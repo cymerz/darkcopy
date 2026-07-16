@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -151,26 +152,61 @@ func (h *PasteHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	isMultipart := strings.Contains(contentType, "multipart/form-data")
 
 	if isForm {
-		// Use Go's built-in form parsing which respects MaxBytesReader limit
-		if err := r.ParseForm(); err != nil {
+		// SECURITY: For form-urlencoded, we need to peek at the body to
+		// distinguish between actual form data (content=...) and raw text
+		// piped via curl --data-binary (which curl sends as form-urlencoded).
+		// Reading with io.ReadAll is bounded by MaxBytesReader (1 MB).
+		bodyBytes, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
 			if wantsPlain(r) {
 				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte("Error: Invalid form payload\n"))
+				_, _ = w.Write([]byte("Error: Failed to read body\n"))
 				return
 			}
-			writeJSONError(w, http.StatusBadRequest, "Invalid form", "BAD_REQUEST")
+			writeJSONError(w, http.StatusBadRequest, "Failed to read request body", "BAD_REQUEST")
 			return
 		}
-		content = r.FormValue("content")
-		language = r.FormValue("language")
-		title = r.FormValue("title")
-		visibility = r.FormValue("visibility")
-		password = r.FormValue("password")
-		expiresInStr = r.FormValue("expires_in")
-		customSlug = strings.TrimSpace(r.FormValue("custom_slug"))
-		burnAfterRead = r.FormValue("burn_after_read") == "true" || r.FormValue("burn_after_read") == "on"
-		isEncrypted = r.FormValue("is_encrypted") == "true" || r.FormValue("is_encrypted") == "on"
+
+		// Restore body so ParseForm can read it
+		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+		// Check if this looks like actual form data (has 'content=' or '='-separated pairs)
+		looksLikeForm := bytes.Contains(bodyBytes, []byte("content="))
+
+		if wantsPlain(r) && !looksLikeForm {
+			// CLI client piped raw data — treat entire body as paste content
+			content = string(bodyBytes)
+			language = r.URL.Query().Get("language")
+			title = r.URL.Query().Get("title")
+			visibility = r.URL.Query().Get("visibility")
+			password = r.URL.Query().Get("password")
+			expiresInStr = r.URL.Query().Get("expires_in")
+			customSlug = strings.TrimSpace(r.URL.Query().Get("custom_slug"))
+			burnAfterRead = r.URL.Query().Get("burn_after_read") == "true" || r.URL.Query().Get("burn_after_read") == "on"
+			isEncrypted = r.URL.Query().Get("is_encrypted") == "true" || r.URL.Query().Get("is_encrypted") == "on"
+		} else {
+			// Actual form data — use standard form parsing
+			if err := r.ParseForm(); err != nil {
+				if wantsPlain(r) {
+					w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte("Error: Invalid form payload\n"))
+					return
+				}
+				writeJSONError(w, http.StatusBadRequest, "Invalid form", "BAD_REQUEST")
+				return
+			}
+			content = r.FormValue("content")
+			language = r.FormValue("language")
+			title = r.FormValue("title")
+			visibility = r.FormValue("visibility")
+			password = r.FormValue("password")
+			expiresInStr = r.FormValue("expires_in")
+			customSlug = strings.TrimSpace(r.FormValue("custom_slug"))
+			burnAfterRead = r.FormValue("burn_after_read") == "true" || r.FormValue("burn_after_read") == "on"
+			isEncrypted = r.FormValue("is_encrypted") == "true" || r.FormValue("is_encrypted") == "on"
+		}
 	} else if isMultipart {
 		// Parse multipart form up to a strict 1MB limit to prevent DoS
 		if err := r.ParseMultipartForm(1 << 20); err != nil {
