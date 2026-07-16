@@ -325,7 +325,7 @@ export default function DocsPage() {
 
       {/* ───── Hero ───── */}
       <header className="text-center space-y-4 max-w-3xl mx-auto pt-4">
-        <h1 className="font-display text-headline-xl text-secondary drop-shadow-[0_0_30px_rgba(76,215,246,0.5)]">
+        <h1 className="font-display text-headline-lg md:text-headline-xl text-secondary drop-shadow-[0_0_30px_rgba(76,215,246,0.5)] break-words">
           API DOCUMENTATION
         </h1>
         <p className="text-sm text-on-surface-variant font-mono leading-relaxed max-w-2xl mx-auto">

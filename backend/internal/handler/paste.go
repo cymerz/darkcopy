@@ -293,6 +293,10 @@ func (h *PasteHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		vis = paste.VisibilityPasswordProtected
 	}
 
+	if language == "" {
+		language = "plaintext"
+	}
+
 	req := paste.CreatePasteRequest{
 		Content:       content,
 		Language:      language,

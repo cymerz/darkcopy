@@ -54,35 +54,43 @@ function ExpiryListEditor({
         <h3 className="text-sm font-mono text-secondary uppercase tracking-wider">{title}</h3>
         <p className="mt-1 text-xs text-on-surface-variant font-mono">{hint}</p>
       </div>
-      <ul className="space-y-2">
+      <ul className="space-y-3">
         {options.map((o, i) => (
-          <li key={i} className="flex flex-wrap items-center gap-2">
-            <input
-              type="text"
-              value={o.label}
-              onChange={(e) => update(i, { label: e.target.value })}
-              placeholder="Label (e.g. 1 Hour)"
-              disabled={disabled}
-              className={`${INPUT_CLASS} max-w-[12rem] flex-1`}
-            />
-            <input
-              type="number"
-              min={0}
-              value={o.minutes}
-              onChange={(e) => update(i, { minutes: Number(e.target.value) })}
-              placeholder="Minutes"
-              disabled={disabled}
-              className={`${INPUT_CLASS} max-w-[8rem]`}
-            />
-            <span className="text-xs text-on-surface-variant font-mono">minutes (0 = forever)</span>
-            <button
-              type="button"
-              onClick={() => remove(i)}
-              disabled={disabled}
-              className="ml-auto inline-flex min-h-[40px] items-center border-2 border-danger-red/40 px-3 py-1.5 text-sm font-mono text-danger-red transition-colors hover:bg-danger-red/20 disabled:opacity-60"
-            >
-              Remove
-            </button>
+          <li key={i} className="grid grid-cols-12 gap-2 items-center border-b border-surface-variant/30 pb-3 sm:border-b-0 sm:pb-0">
+            <div className="col-span-12 sm:col-span-5">
+              <input
+                type="text"
+                value={o.label}
+                onChange={(e) => update(i, { label: e.target.value })}
+                placeholder="Label (e.g. 1 Hour)"
+                disabled={disabled}
+                className={`${INPUT_CLASS}`}
+              />
+            </div>
+            <div className="col-span-6 sm:col-span-3">
+              <input
+                type="number"
+                min={0}
+                value={o.minutes}
+                onChange={(e) => update(i, { minutes: Number(e.target.value) })}
+                placeholder="Minutes"
+                disabled={disabled}
+                className={`${INPUT_CLASS}`}
+              />
+            </div>
+            <div className="col-span-6 sm:col-span-2 text-xs text-on-surface-variant font-mono">
+              min (0=∞)
+            </div>
+            <div className="col-span-12 sm:col-span-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => remove(i)}
+                disabled={disabled}
+                className="w-full sm:w-auto inline-flex min-h-[40px] items-center justify-center border-2 border-danger-red/40 px-3 py-1.5 text-sm font-mono text-danger-red transition-colors hover:bg-danger-red/20 disabled:opacity-60"
+              >
+                Remove
+              </button>
+            </div>
           </li>
         ))}
       </ul>
