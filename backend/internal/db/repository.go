@@ -297,9 +297,9 @@ func (r *FileRepo) WithRedis(rdb *redis.Client) *FileRepo {
 // InsertFile inserts a new file record into the database.
 func (r *FileRepo) InsertFile(ctx context.Context, f *paste.FileRecord) error {
 	_, err := r.writePool.Exec(ctx, `
-		INSERT INTO files (id, slug, filename, mime_type, size_bytes, storage_key, visibility, password_hash, expires_at, created_at, md5_hash, sha256_hash)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-	`, f.ID, f.Slug, f.Filename, f.MIMEType, f.SizeBytes, f.StorageKey, f.Visibility, nilIfEmpty(f.PasswordHash), f.ExpiresAt, f.CreatedAt, f.MD5Hash, f.SHA256Hash)
+		INSERT INTO files (id, slug, filename, mime_type, size_bytes, storage_key, visibility, password_hash, expires_at, created_at, md5_hash, sha256_hash, storage_provider)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+	`, f.ID, f.Slug, f.Filename, f.MIMEType, f.SizeBytes, f.StorageKey, f.Visibility, nilIfEmpty(f.PasswordHash), f.ExpiresAt, f.CreatedAt, f.MD5Hash, f.SHA256Hash, nilIfEmpty(f.StorageProvider))
 	if err == nil && r.rdb != nil {
 		r.rdb.Del(ctx, "file:recent")
 	}
@@ -331,15 +331,19 @@ func (r *FileRepo) GetBySlug(ctx context.Context, slug string) (*paste.FileRecor
 
 	f := &paste.FileRecord{}
 	var passwordHash *string
+	var storageProvider *string
 	err := r.readPool.QueryRow(ctx, `
-		SELECT id, slug, filename, mime_type, size_bytes, storage_key, visibility, password_hash, expires_at, created_at, downloads, md5_hash, sha256_hash
+		SELECT id, slug, filename, mime_type, size_bytes, storage_key, visibility, password_hash, expires_at, created_at, downloads, md5_hash, sha256_hash, storage_provider
 		FROM files WHERE slug = $1
-	`, slug).Scan(&f.ID, &f.Slug, &f.Filename, &f.MIMEType, &f.SizeBytes, &f.StorageKey, &f.Visibility, &passwordHash, &f.ExpiresAt, &f.CreatedAt, &f.Downloads, &f.MD5Hash, &f.SHA256Hash)
+	`, slug).Scan(&f.ID, &f.Slug, &f.Filename, &f.MIMEType, &f.SizeBytes, &f.StorageKey, &f.Visibility, &passwordHash, &f.ExpiresAt, &f.CreatedAt, &f.Downloads, &f.MD5Hash, &f.SHA256Hash, &storageProvider)
 	if err != nil {
 		return nil, err
 	}
 	if passwordHash != nil {
 		f.PasswordHash = *passwordHash
+	}
+	if storageProvider != nil {
+		f.StorageProvider = *storageProvider
 	}
 
 	if r.rdb != nil {

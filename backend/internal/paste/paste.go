@@ -76,14 +76,15 @@ type FileRecord struct {
 	Filename     string
 	MIMEType     string
 	SizeBytes    int64
-	StorageKey   string
-	Visibility   Visibility
-	PasswordHash string
-	ExpiresAt    *time.Time
-	CreatedAt    time.Time
-	Downloads    int
-	MD5Hash      string
-	SHA256Hash   string
+	StorageKey      string
+	Visibility      Visibility
+	PasswordHash    string
+	ExpiresAt       *time.Time
+	CreatedAt       time.Time
+	Downloads       int
+	MD5Hash         string
+	SHA256Hash      string
+	StorageProvider string
 }
 
 

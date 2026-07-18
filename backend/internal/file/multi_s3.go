@@ -24,6 +24,15 @@ func NewMultiS3Storage(providers []FileStorage, names []string) *MultiS3Storage 
 	}
 }
 
+// GetProviderName returns the name of the sharded provider that should hold the given key.
+func (m *MultiS3Storage) GetProviderName(storageKey string) string {
+	idx := m.GetProviderIndex(storageKey)
+	if idx >= 0 && idx < len(m.names) {
+		return m.names[idx]
+	}
+	return ""
+}
+
 // GetProviderNames returns the registered provider names.
 func (m *MultiS3Storage) GetProviderNames() []string {
 	return m.names
@@ -139,19 +148,50 @@ type presignerWithHead interface {
 	PresignURL(ctx context.Context, storageKey string, expires time.Duration, inline bool) (string, error)
 }
 
-// PresignURL finds the S3 provider that actually holds the file (using a
-// lightweight HeadObject check) and generates the presigned URL from that
-// provider. This matches the fallback behaviour of Open(), so files uploaded
-// before sharding or to a non-primary bucket are handled correctly.
+// PresignURLWithProvider generates a secure, temporary pre-signed URL using the explicitly named provider.
+func (m *MultiS3Storage) PresignURLWithProvider(ctx context.Context, storageKey string, provider string, expires time.Duration, inline bool) (string, error) {
+	if provider == "" {
+		// Fallback to sharding determination or probing if database doesn't record provider.
+		return m.PresignURL(ctx, storageKey, expires, inline)
+	}
+
+	for i, name := range m.names {
+		if name == provider {
+			p, ok := m.providers[i].(presignerWithHead)
+			if ok {
+				return p.PresignURL(ctx, storageKey, expires, inline)
+			}
+		}
+	}
+
+	// If provider name doesn't match current config names (e.g. decommissioned bucket), fall back.
+	return m.PresignURL(ctx, storageKey, expires, inline)
+}
+
+// PresignURL generates a secure, temporary pre-signed URL for the given storage key.
+// It prioritizes the primary deterministic provider directly.
+// It only falls back to probing other providers if the primary provider fails.
 func (m *MultiS3Storage) PresignURL(ctx context.Context, storageKey string, expires time.Duration, inline bool) (string, error) {
 	idx := m.GetProviderIndex(storageKey)
 	if idx < 0 {
 		return "", fmt.Errorf("multi-s3 storage: no S3 providers configured")
 	}
 
-	// Build the probe order: primary provider first, then the rest.
+	// 1. Try generating the presigned URL directly from the primary provider first.
+	if idx < len(m.providers) {
+		p, ok := m.providers[idx].(presignerWithHead)
+		if ok {
+			url, err := p.PresignURL(ctx, storageKey, expires, inline)
+			if err == nil {
+				return url, nil
+			}
+			log.Printf("WARNING: direct presign failed on primary provider %s for %s: %v. Probing other providers...", m.names[idx], storageKey, err)
+		}
+	}
+
+	// 2. Fallback: Build the probe order to check where the file actually resides.
+	// This ensures backward compatibility for legacy files uploaded before sharding.
 	order := make([]int, 0, len(m.providers))
-	order = append(order, idx)
 	for i := range m.providers {
 		if i != idx {
 			order = append(order, i)
@@ -164,14 +204,14 @@ func (m *MultiS3Storage) PresignURL(ctx context.Context, storageKey string, expi
 			continue
 		}
 
-		// Lightweight existence check — if the file is not on this provider, skip.
+		// Probing via Head is necessary as a fallback for legacy items.
 		if _, err := p.Head(ctx, storageKey); err != nil {
 			continue
 		}
 
 		url, err := p.PresignURL(ctx, storageKey, expires, inline)
 		if err != nil {
-			log.Printf("WARNING: presign failed on provider %s for %s: %v", m.names[i], storageKey, err)
+			log.Printf("WARNING: fallback presign failed on provider %s for %s: %v", m.names[i], storageKey, err)
 			continue
 		}
 		return url, nil

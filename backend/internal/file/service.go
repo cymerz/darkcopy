@@ -88,6 +88,12 @@ type FileStorage interface {
 	Head(ctx context.Context, storageKey string) (size int64, err error)
 }
 
+// StorageProviderTracker is an optional interface storage backends can implement
+// to report the name of the provider holding a specific storage key.
+type StorageProviderTracker interface {
+	GetProviderName(storageKey string) string
+}
+
 // UploadPresigner defines the interface for generating presigned upload URLs.
 type UploadPresigner interface {
 	PresignUploadURL(ctx context.Context, storageKey string, expires time.Duration, contentType string, size int64) (string, error)
@@ -218,19 +224,25 @@ func (s *Service) Upload(ctx context.Context, req paste.UploadFileRequest) (*pas
 		expiresAt = &t
 	}
 
+	var providerName string
+	if tracker, ok := s.storage.(StorageProviderTracker); ok {
+		providerName = tracker.GetProviderName(storageKey)
+	}
+
 	record := &paste.FileRecord{
-		ID:           uuid.New(),
-		Slug:         slug,
-		Filename:     filename,
-		MIMEType:     req.MIMEType,
-		SizeBytes:    req.Size,
-		StorageKey:   storageKey,
-		Visibility:   req.Visibility,
-		PasswordHash: passwordHash,
-		ExpiresAt:    expiresAt,
-		CreatedAt:    now,
-		MD5Hash:      md5Hash,
-		SHA256Hash:   sha256Hash,
+		ID:              uuid.New(),
+		Slug:            slug,
+		Filename:        filename,
+		MIMEType:        req.MIMEType,
+		SizeBytes:       req.Size,
+		StorageKey:      storageKey,
+		Visibility:      req.Visibility,
+		PasswordHash:    passwordHash,
+		ExpiresAt:       expiresAt,
+		CreatedAt:       now,
+		MD5Hash:         md5Hash,
+		SHA256Hash:      sha256Hash,
+		StorageProvider: providerName,
 	}
 
 	if err := s.repo.InsertFile(ctx, record); err != nil {
@@ -398,6 +410,12 @@ type Presigner interface {
 	PresignURL(ctx context.Context, storageKey string, expires time.Duration, inline bool) (string, error)
 }
 
+// ProviderPresigner is an optional interface for storage backends to support
+// generating presigned download URLs with a specific target provider name from the database.
+type ProviderPresigner interface {
+	PresignURLWithProvider(ctx context.Context, storageKey string, provider string, expires time.Duration, inline bool) (string, error)
+}
+
 // PresignDownloadURL generates a temporary presigned URL for direct S3 download.
 // Returns ErrPresignUnsupported if the storage backend does not support presigning.
 func (s *Service) PresignDownloadURL(ctx context.Context, slug string, inline bool) (string, error) {
@@ -406,6 +424,12 @@ func (s *Service) PresignDownloadURL(ctx context.Context, slug string, inline bo
 		return "", err
 	}
 
+	// Try ProviderPresigner first if it's implemented (e.g. MultiS3Storage)
+	if p, ok := s.storage.(ProviderPresigner); ok {
+		return p.PresignURLWithProvider(ctx, record.StorageKey, record.StorageProvider, DefaultPresignExpiry, inline)
+	}
+
+	// Fallback to simple Presigner
 	presigner, ok := s.storage.(Presigner)
 	if !ok {
 		return "", ErrPresignUnsupported
@@ -544,19 +568,25 @@ func (s *Service) RegisterUploadedFile(ctx context.Context, req paste.RegisterFi
 		expiresAt = &t
 	}
 
+	var providerName string
+	if tracker, ok := s.storage.(StorageProviderTracker); ok {
+		providerName = tracker.GetProviderName(expectedStorageKey)
+	}
+
 	record := &paste.FileRecord{
-		ID:           uuid.New(),
-		Slug:         req.Slug,
-		Filename:     filename,
-		MIMEType:     req.MIMEType,
-		SizeBytes:    req.Size,
-		StorageKey:   expectedStorageKey,
-		Visibility:   req.Visibility,
-		PasswordHash: passwordHash,
-		ExpiresAt:    expiresAt,
-		CreatedAt:    now,
-		MD5Hash:      req.MD5Hash,
-		SHA256Hash:   req.SHA256Hash,
+		ID:              uuid.New(),
+		Slug:            req.Slug,
+		Filename:        filename,
+		MIMEType:        req.MIMEType,
+		SizeBytes:       req.Size,
+		StorageKey:      expectedStorageKey,
+		Visibility:      req.Visibility,
+		PasswordHash:    passwordHash,
+		ExpiresAt:       expiresAt,
+		CreatedAt:       now,
+		MD5Hash:         req.MD5Hash,
+		SHA256Hash:      req.SHA256Hash,
+		StorageProvider: providerName,
 	}
 
 	if err := s.repo.InsertFile(ctx, record); err != nil {
