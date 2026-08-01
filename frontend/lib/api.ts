@@ -493,6 +493,7 @@ export async function createAdminBackup(
 export async function restoreRecentAdminBackup(
   token: string,
   filename: string,
+  wipeFirst = false,
 ): Promise<AdminRestoreResult> {
   return apiFetch<AdminRestoreResult>('/admin/backups/restore', {
     method: 'POST',
@@ -500,7 +501,7 @@ export async function restoreRecentAdminBackup(
       'X-Admin-Token': token,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ filename }),
+    body: JSON.stringify({ filename, wipe_first: wipeFirst }),
   });
 }
 
@@ -508,11 +509,16 @@ export async function restoreRecentAdminBackup(
 export async function restoreUploadedAdminBackup(
   token: string,
   file: File,
+  wipeFirst = false,
 ): Promise<AdminRestoreResult> {
   const formData = new FormData();
   formData.append('file', file);
+  if (wipeFirst) {
+    formData.append('wipe_first', 'true');
+  }
 
-  const url = buildUrl('/admin/backups/restore-json');
+  const query = wipeFirst ? '?wipe_first=true' : '';
+  const url = buildUrl(`/admin/backups/restore-json${query}`);
   const res = await fetch(url, {
     method: 'POST',
     headers: {

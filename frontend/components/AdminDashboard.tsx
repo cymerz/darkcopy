@@ -436,6 +436,7 @@ function AdminBackupSection({ token, onUnauthorized }: { token: string; onUnauth
   const [creating, setCreating] = useState(false);
   const [restoringFilename, setRestoringFilename] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [wipeFirst, setWipeFirst] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -480,15 +481,16 @@ function AdminBackupSection({ token, onUnauthorized }: { token: string; onUnauth
   };
 
   const handleRestoreSnapshot = async (filename: string) => {
-    if (!window.confirm(`RESTORE WARNING: Restoring snapshot "${filename}" will overwrite current database state. Continue?`)) {
+    const actionLabel = wipeFirst ? 'WIPE ALL EXISTING DATABASE DATA and restore' : 'restore and merge';
+    if (!window.confirm(`RESTORE WARNING: Are you sure you want to ${actionLabel} snapshot "${filename}"?`)) {
       return;
     }
     setRestoringFilename(filename);
     setError(null);
     setSuccessMsg(null);
     try {
-      const res: AdminRestoreResult = await restoreRecentAdminBackup(token, filename);
-      setSuccessMsg(`Successfully restored snapshot! Pastes: ${res.restored_pastes}, Files: ${res.restored_files}, Reports: ${res.restored_reports}${res.settings_updated ? ', Settings reloaded' : ''}.`);
+      const res: AdminRestoreResult = await restoreRecentAdminBackup(token, filename, wipeFirst);
+      setSuccessMsg(`Successfully restored snapshot (${wipeFirst ? 'Clean Restore' : 'Safe Merge'})! Pastes: ${res.restored_pastes}, Files: ${res.restored_files}, Reports: ${res.restored_reports}${res.settings_updated ? ', Settings reloaded' : ''}.`);
     } catch (err) {
       if (err instanceof APIError && (err.status === 401 || err.status === 404)) {
         onUnauthorized();
@@ -524,7 +526,8 @@ function AdminBackupSection({ token, onUnauthorized }: { token: string; onUnauth
   const handleUploadRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!window.confirm(`UPLOAD RESTORE WARNING: Restoring from file "${file.name}" will update database state. Continue?`)) {
+    const actionLabel = wipeFirst ? 'WIPE ALL EXISTING DATABASE DATA and restore' : 'restore and merge';
+    if (!window.confirm(`UPLOAD RESTORE WARNING: Are you sure you want to ${actionLabel} from file "${file.name}"?`)) {
       e.target.value = '';
       return;
     }
@@ -532,8 +535,8 @@ function AdminBackupSection({ token, onUnauthorized }: { token: string; onUnauth
     setError(null);
     setSuccessMsg(null);
     try {
-      const res: AdminRestoreResult = await restoreUploadedAdminBackup(token, file);
-      setSuccessMsg(`Successfully restored from JSON file! Pastes: ${res.restored_pastes}, Files: ${res.restored_files}, Reports: ${res.restored_reports}${res.settings_updated ? ', Settings reloaded' : ''}.`);
+      const res: AdminRestoreResult = await restoreUploadedAdminBackup(token, file, wipeFirst);
+      setSuccessMsg(`Successfully restored from JSON file (${wipeFirst ? 'Clean Restore' : 'Safe Merge'})! Pastes: ${res.restored_pastes}, Files: ${res.restored_files}, Reports: ${res.restored_reports}${res.settings_updated ? ', Settings reloaded' : ''}.`);
     } catch (err) {
       if (err instanceof APIError && (err.status === 401 || err.status === 404)) {
         onUnauthorized();
@@ -553,7 +556,7 @@ function AdminBackupSection({ token, onUnauthorized }: { token: string; onUnauth
           <div>
             <h2 className="font-mono text-sm font-bold text-secondary uppercase tracking-wider">SYSTEM BACKUPS & RESTORE</h2>
             <p className="text-xs font-mono text-on-surface-variant mt-1">
-              Create instant server snapshots, download backups, or 1-Click restore recent snapshots safely.
+              Create instant server snapshots, download backups, or restore snapshots safely.
             </p>
           </div>
           <button
@@ -564,6 +567,27 @@ function AdminBackupSection({ token, onUnauthorized }: { token: string; onUnauth
           >
             {creating ? 'CREATING...' : '+ CREATE SNAPSHOT NOW'}
           </button>
+        </div>
+
+        {/* Wipe First Toggle */}
+        <div className="border-2 border-surface-variant bg-surface-container-low/40 p-4 space-y-2">
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="wipe-first-toggle"
+              checked={wipeFirst}
+              onChange={(e) => setWipeFirst(e.target.checked)}
+              className="h-4 w-4 rounded border-surface-variant text-danger-red focus:ring-danger-red"
+            />
+            <label htmlFor="wipe-first-toggle" className="font-mono text-xs font-bold text-on-surface cursor-pointer select-none">
+              [!] Clean Restore Mode: Wipe existing database tables before restoring snapshot
+            </label>
+          </div>
+          <p className="text-[11px] font-mono text-on-surface-variant pl-7">
+            {wipeFirst
+              ? '⚠ DANGER MODE ENABLED: Current pastes, files, and reports in DB will be TRUNCATED before inserting snapshot items.'
+              : '✓ SAFE MERGE MODE (Default): Restores missing items and overwrites modified ones while preserving new items created after the backup.'}
+          </p>
         </div>
 
         {successMsg && (

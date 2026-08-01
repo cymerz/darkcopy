@@ -33,8 +33,8 @@ type BackupService interface {
 	ListBackups(ctx context.Context) ([]backup.BackupInfo, error)
 	CreateSnapshot(ctx context.Context) (*backup.BackupInfo, error)
 	ValidateFilename(filename string) (string, error)
-	RestoreServerSnapshot(ctx context.Context, filename string) (*backup.RestoreResult, error)
-	RestoreJSONPayload(ctx context.Context, raw []byte) (*backup.RestoreResult, error)
+	RestoreServerSnapshot(ctx context.Context, filename string, wipeFirst bool) (*backup.RestoreResult, error)
+	RestoreJSONPayload(ctx context.Context, raw []byte, wipeFirst bool) (*backup.RestoreResult, error)
 }
 
 // SettingsManager exposes read/update of runtime settings to the admin handler.
@@ -456,14 +456,15 @@ func (h *AdminHandler) HandleRestoreRecentBackup(w http.ResponseWriter, r *http.
 	}
 
 	var body struct {
-		Filename string `json:"filename"`
+		Filename  string `json:"filename"`
+		WipeFirst bool   `json:"wipe_first"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Filename == "" {
 		writeJSONError(w, http.StatusBadRequest, "Invalid request body: filename required", "BAD_REQUEST")
 		return
 	}
 
-	res, err := h.backups.RestoreServerSnapshot(r.Context(), body.Filename)
+	res, err := h.backups.RestoreServerSnapshot(r.Context(), body.Filename, body.WipeFirst)
 	if err != nil {
 		if errors.Is(err, backup.ErrBackupNotFound) {
 			writeJSONError(w, http.StatusNotFound, "Backup snapshot not found", "NOT_FOUND")
@@ -508,7 +509,8 @@ func (h *AdminHandler) HandleRestoreUploadedJSON(w http.ResponseWriter, r *http.
 		return
 	}
 
-	res, err := h.backups.RestoreJSONPayload(r.Context(), raw)
+	wipeFirst := r.FormValue("wipe_first") == "true" || r.URL.Query().Get("wipe_first") == "true"
+	res, err := h.backups.RestoreJSONPayload(r.Context(), raw, wipeFirst)
 	if err != nil {
 		if errors.Is(err, backup.ErrInvalidBackupData) {
 			writeJSONError(w, http.StatusBadRequest, err.Error(), "VALIDATION_ERROR")

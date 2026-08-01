@@ -44,6 +44,12 @@ func (m *mockRepo) RestoreReports(ctx context.Context, reports []*report.Report)
 	m.reports = reports
 	return len(reports), nil
 }
+func (m *mockRepo) WipeAllData(ctx context.Context) error {
+	m.pastes = nil
+	m.files = nil
+	m.reports = nil
+	return nil
+}
 func (m *mockRepo) RestoreSettings(ctx context.Context, s *settings.Settings) error {
 	m.settings = s
 	return nil
@@ -148,7 +154,7 @@ func TestCreateSnapshotAndRestore(t *testing.T) {
 	repo.files = nil
 
 	// Perform snapshot restore
-	res, err := svc.RestoreServerSnapshot(context.Background(), info.Filename)
+	res, err := svc.RestoreServerSnapshot(context.Background(), info.Filename, false)
 	if err != nil {
 		t.Fatalf("Failed restoring snapshot: %v", err)
 	}
@@ -171,7 +177,7 @@ func TestRestoreJSONPayload_InvalidJSON(t *testing.T) {
 	tmpDir := t.TempDir()
 	svc, _ := backup.NewService(tmpDir, &mockRepo{}, &mockFlusher{})
 
-	_, err := svc.RestoreJSONPayload(context.Background(), []byte("invalid json"))
+	_, err := svc.RestoreJSONPayload(context.Background(), []byte("invalid json"), false)
 	if err == nil {
 		t.Errorf("Expected error for invalid json, got nil")
 	}

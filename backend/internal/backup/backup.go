@@ -63,6 +63,7 @@ type Repository interface {
 	RestoreFiles(ctx context.Context, files []*paste.FileRecord) (int, error)
 	RestoreReports(ctx context.Context, reports []*report.Report) (int, error)
 	RestoreSettings(ctx context.Context, s *settings.Settings) error
+	WipeAllData(ctx context.Context) error
 }
 
 // CacheFlusher invalidates all caches after a restore operation.
@@ -251,7 +252,8 @@ func (s *Service) CreateSnapshot(ctx context.Context) (*BackupInfo, error) {
 }
 
 // RestoreJSONPayload validates and restores system state from a JSON backup payload.
-func (s *Service) RestoreJSONPayload(ctx context.Context, raw []byte) (*RestoreResult, error) {
+// If wipeFirst is true, existing database tables (pastes, files, reports) are truncated first.
+func (s *Service) RestoreJSONPayload(ctx context.Context, raw []byte, wipeFirst bool) (*RestoreResult, error) {
 	var data BackupData
 	if err := json.Unmarshal(raw, &data); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidBackupData, err)
@@ -259,6 +261,12 @@ func (s *Service) RestoreJSONPayload(ctx context.Context, raw []byte) (*RestoreR
 
 	if data.Version == "" {
 		return nil, fmt.Errorf("%w: missing backup version", ErrInvalidBackupData)
+	}
+
+	if wipeFirst {
+		if err := s.repo.WipeAllData(ctx); err != nil {
+			return nil, fmt.Errorf("failed wiping existing data: %w", err)
+		}
 	}
 
 	restoredPastes := 0
@@ -309,7 +317,7 @@ func (s *Service) RestoreJSONPayload(ctx context.Context, raw []byte) (*RestoreR
 }
 
 // RestoreServerSnapshot restores state from an existing snapshot file in s.backupDir.
-func (s *Service) RestoreServerSnapshot(ctx context.Context, filename string) (*RestoreResult, error) {
+func (s *Service) RestoreServerSnapshot(ctx context.Context, filename string, wipeFirst bool) (*RestoreResult, error) {
 	fullPath, err := s.ValidateFilename(filename)
 	if err != nil {
 		return nil, err
@@ -323,5 +331,5 @@ func (s *Service) RestoreServerSnapshot(ctx context.Context, filename string) (*
 		return nil, fmt.Errorf("failed reading backup file: %w", err)
 	}
 
-	return s.RestoreJSONPayload(ctx, raw)
+	return s.RestoreJSONPayload(ctx, raw, wipeFirst)
 }

@@ -136,6 +136,21 @@ func (r *BackupRepo) GetSettings(ctx context.Context) (*settings.Settings, error
 	return &s, nil
 }
 
+// WipeAllData truncates all pastes, files, and reports in the database inside a transaction.
+func (r *BackupRepo) WipeAllData(ctx context.Context) error {
+	tx, err := r.writePool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `TRUNCATE TABLE reports, files, pastes CASCADE`); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
 // RestorePastes performs transactional upsert of pastes.
 func (r *BackupRepo) RestorePastes(ctx context.Context, pastes []*paste.Paste) (int, error) {
 	tx, err := r.writePool.Begin(ctx)
