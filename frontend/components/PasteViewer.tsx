@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import DOMPurify from 'isomorphic-dompurify';
+import type { default as DOMPurifyType } from 'dompurify';
 import { CopyButton } from '@/components/CopyButton';
 import { CountdownTimer } from '@/components/CountdownTimer';
 import { ReportButton } from '@/components/ReportButton';
@@ -57,8 +57,14 @@ export function PasteViewer({ paste }: PasteViewerProps) {
   const [decryptionError, setDecryptionError] = useState<string | null>(null);
   const [decryptedContent, setDecryptedContent] = useState<string | null>(null);
 
+  const [DOMPurify, setDOMPurify] = useState<typeof DOMPurifyType | null>(null);
+
   const router = useRouter();
   const [isForking, setIsForking] = useState(false);
+
+  useEffect(() => {
+    import('dompurify').then((mod) => setDOMPurify(() => mod.default));
+  }, []);
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -297,7 +303,7 @@ export function PasteViewer({ paste }: PasteViewerProps) {
             {lineNumbers.map((n) => <div key={n}>{n}</div>)}
           </div>
           <div className="min-w-0 flex-1 overflow-x-auto px-4 py-4 font-mono text-sm leading-6 text-on-surface">
-            {showHighlighting && !paste.is_encrypted ? (
+            {showHighlighting && !paste.is_encrypted && DOMPurify ? (
               <div className="darkcopy-code" dangerouslySetInnerHTML={{ __html: themeHighlight(DOMPurify.sanitize(paste.highlighted_html)) }} />
             ) : (
               <pre className="whitespace-pre">{displayContent}</pre>
