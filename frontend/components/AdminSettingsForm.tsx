@@ -313,7 +313,7 @@ export function AdminSettingsForm({
       </div>
 
       {/* Temporary Toggles */}
-      <div className="grid gap-4 sm:grid-cols-3 border-2 border-surface-variant bg-surface-container-lowest p-4">
+      <div className="grid gap-4 sm:grid-cols-2 border-2 border-surface-variant bg-surface-container-lowest p-4">
         <label className="flex items-center space-x-3 cursor-pointer">
           <input
             type="checkbox"
@@ -348,7 +348,7 @@ export function AdminSettingsForm({
             </span>
           </div>
         </label>
-        <label className="flex items-center space-x-3 cursor-pointer">
+        <label className="flex items-center space-x-3 cursor-pointer border-t border-surface-variant pt-3 sm:border-t-0 sm:pt-0">
           <input
             type="checkbox"
             checked={settings.use_direct_upload ?? false}
@@ -358,10 +358,27 @@ export function AdminSettingsForm({
           />
           <div>
             <span className="block text-sm font-mono text-secondary uppercase tracking-wider">
-              Use Direct-to-S3 Upload
+              1. Web UI Direct S3 Upload
             </span>
             <span className="block text-xs text-on-surface-variant font-mono">
-              Upload files directly to S3 storage via presigned URLs.
+              Browser upload form uses presigned S3 URLs directly.
+            </span>
+          </div>
+        </label>
+        <label className="flex items-center space-x-3 cursor-pointer border-t border-surface-variant pt-3 sm:border-t-0 sm:pt-0">
+          <input
+            type="checkbox"
+            checked={settings.enforce_direct_upload_api ?? false}
+            onChange={(e) => patch({ enforce_direct_upload_api: e.target.checked })}
+            disabled={saving}
+            className="h-4 w-4 border-2 border-surface-variant text-secondary focus:ring-secondary bg-transparent"
+          />
+          <div>
+            <span className="block text-sm font-mono text-secondary uppercase tracking-wider">
+              2. Block Server Proxy Uploads (API / CLI)
+            </span>
+            <span className="block text-xs text-on-surface-variant font-mono">
+              Blocks direct POST /api/upload proxy uploads to save server bandwidth.
             </span>
           </div>
         </label>

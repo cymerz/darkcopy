@@ -242,6 +242,7 @@ export interface AdminSettings {
   max_daily_upload_bytes?: number;
   max_daily_upload_bytes_per_ip?: number;
   use_direct_upload?: boolean;
+  enforce_direct_upload_api?: boolean;
 }
 
 // ---------------------------------------------------------------------------

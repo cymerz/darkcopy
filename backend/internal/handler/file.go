@@ -150,6 +150,16 @@ func (h *FileHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enforce direct upload policy for API/CLI when configured by administrator.
+	if h.settings != nil && h.settings.Get().EnforceDirectUploadAPI && h.fileService.SupportsUploadPresigning() {
+		writeJSON(w, http.StatusBadRequest, errorResponse{
+			Error:  "Direct server uploads are disabled by admin policy. Please use the pre-signed upload API.",
+			Code:   "DIRECT_UPLOAD_REQUIRED",
+			Status: http.StatusBadRequest,
+		})
+		return
+	}
+
 	// Enforce per-IP daily upload limit when configured.
 	if h.quota != nil && h.settings != nil {
 		limit := h.settings.Get().MaxFileUploadsPerDayPerIP
