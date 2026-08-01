@@ -532,6 +532,7 @@ export async function restoreUploadedAdminBackup(
 
 /** Helper to trigger browser download for a snapshot file. */
 export function getAdminBackupDownloadUrl(token: string, filename: string): string {
-  return buildUrl(`/admin/backups/download/${encodeURIComponent(filename)}`);
+  const base = buildUrl(`/admin/backups/download/${encodeURIComponent(filename)}`);
+  return `${base}?token=${encodeURIComponent(token)}`;
 }
 

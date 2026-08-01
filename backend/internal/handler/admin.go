@@ -124,6 +124,9 @@ func (h *AdminHandler) requireToken(next http.Handler) http.Handler {
 				provided = auth[7:]
 			}
 		}
+		if provided == "" {
+			provided = r.URL.Query().Get("token")
+		}
 
 		if subtle.ConstantTimeCompare([]byte(provided), []byte(h.token)) != 1 {
 			writeJSONError(w, http.StatusUnauthorized, "Invalid admin token", "ADMIN_UNAUTHORIZED")

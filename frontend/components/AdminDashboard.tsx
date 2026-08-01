@@ -500,6 +500,27 @@ function AdminBackupSection({ token, onUnauthorized }: { token: string; onUnauth
     }
   };
 
+  const handleDownloadFile = async (filename: string) => {
+    try {
+      const downloadUrl = getAdminBackupDownloadUrl(token, filename);
+      const res = await fetch(downloadUrl, {
+        headers: { 'X-Admin-Token': token },
+      });
+      if (!res.ok) throw new Error('Download failed');
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      setError(`Failed to download backup file "${filename}".`);
+    }
+  };
+
   const handleUploadRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -594,13 +615,13 @@ function AdminBackupSection({ token, onUnauthorized }: { token: string; onUnauth
                     <td className="py-3 px-3 text-on-surface-variant">{formatFileSize(b.size_bytes)}</td>
                     <td className="py-3 px-3 text-on-surface-variant">{formatRelativeTime(b.created_at)}</td>
                     <td className="py-3 px-3 text-right space-x-2">
-                      <a
-                        href={getAdminBackupDownloadUrl(token, b.filename)}
-                        download={b.filename}
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadFile(b.filename)}
                         className="inline-flex min-h-[32px] items-center border border-secondary text-secondary px-2.5 py-1 text-[11px] uppercase tracking-wider hover:bg-secondary hover:text-black transition-colors"
                       >
                         [ DOWNLOAD ]
-                      </a>
+                      </button>
                       <button
                         type="button"
                         onClick={() => handleRestoreSnapshot(b.filename)}
