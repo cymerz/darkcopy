@@ -11,9 +11,14 @@ import {
   getAdminReports,
   updateAdminReportStatus,
   deleteAdminReport,
+  getAdminBackups,
+  createAdminBackup,
+  restoreRecentAdminBackup,
+  restoreUploadedAdminBackup,
+  getAdminBackupDownloadUrl,
 } from '@/lib/api';
 import { APIError, REPORT_REASONS } from '@/lib/types';
-import type { AdminStats, AdminPasteItem, AdminFileItem, AdminReport, ReportStatus } from '@/lib/types';
+import type { AdminStats, AdminPasteItem, AdminFileItem, AdminReport, ReportStatus, AdminBackupItem, AdminRestoreResult } from '@/lib/types';
 import { formatRelativeTime, formatFileSize } from '@/lib/utils';
 import { AdminSettingsForm } from '@/components/AdminSettingsForm';
 
@@ -108,7 +113,7 @@ function TokenGate() {
   );
 }
 
-type Tab = 'overview' | 'pastes' | 'files' | 'reports' | 'settings';
+type Tab = 'overview' | 'pastes' | 'files' | 'reports' | 'settings' | 'backups';
 
 function Dashboard({ token, onLogout }: { token: string; onLogout: () => void }) {
   const [stats, setStats] = useState<AdminStats | null>(null);
@@ -242,12 +247,15 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
           { key: 'files', label: 'Files', count: stats ? stats.total_files : undefined },
           { key: 'reports', label: 'Reports', count: stats ? stats.pending_reports : undefined, alert: true },
           { key: 'settings', label: 'Settings' },
+          { key: 'backups', label: 'Backup & Restore' },
         ]}
         current={tab} onChange={(k) => setTab(k as Tab)}
       />
 
       {tab === 'settings' ? (
         <AdminSettingsForm token={token} onUnauthorized={onLogout} />
+      ) : tab === 'backups' ? (
+        <AdminBackupSection token={token} onUnauthorized={onLogout} />
       ) : loading ? (
         <p className="py-8 text-center text-sm font-mono text-on-surface-variant">LOADING...</p>
       ) : tab === 'overview' ? (
@@ -418,6 +426,216 @@ function ReportsTableSection({ reports, busyId, onStatus, onDeleteContent, onDel
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function AdminBackupSection({ token, onUnauthorized }: { token: string; onUnauthorized: () => void }) {
+  const [backups, setBackups] = useState<AdminBackupItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [restoringFilename, setRestoringFilename] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const fetchBackups = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await getAdminBackups(token);
+      setBackups(res.backups ?? []);
+    } catch (err) {
+      if (err instanceof APIError && (err.status === 401 || err.status === 404)) {
+        onUnauthorized();
+        return;
+      }
+      setError('Failed to fetch backup snapshots.');
+    } finally {
+      setLoading(false);
+    }
+  }, [token, onUnauthorized]);
+
+  useEffect(() => {
+    fetchBackups();
+  }, [fetchBackups]);
+
+  const handleCreateSnapshot = async () => {
+    setCreating(true);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const res = await createAdminBackup(token);
+      setSuccessMsg(`Backup snapshot created: ${res.backup.filename}`);
+      await fetchBackups();
+    } catch (err) {
+      if (err instanceof APIError && (err.status === 401 || err.status === 404)) {
+        onUnauthorized();
+        return;
+      }
+      setError('Failed to create backup snapshot.');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleRestoreSnapshot = async (filename: string) => {
+    if (!window.confirm(`RESTORE WARNING: Restoring snapshot "${filename}" will overwrite current database state. Continue?`)) {
+      return;
+    }
+    setRestoringFilename(filename);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const res: AdminRestoreResult = await restoreRecentAdminBackup(token, filename);
+      setSuccessMsg(`Successfully restored snapshot! Pastes: ${res.restored_pastes}, Files: ${res.restored_files}, Reports: ${res.restored_reports}${res.settings_updated ? ', Settings reloaded' : ''}.`);
+    } catch (err) {
+      if (err instanceof APIError && (err.status === 401 || err.status === 404)) {
+        onUnauthorized();
+        return;
+      }
+      setError(err instanceof APIError ? err.message : 'Failed to restore snapshot.');
+    } finally {
+      setRestoringFilename(null);
+    }
+  };
+
+  const handleUploadRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!window.confirm(`UPLOAD RESTORE WARNING: Restoring from file "${file.name}" will update database state. Continue?`)) {
+      e.target.value = '';
+      return;
+    }
+    setUploading(true);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const res: AdminRestoreResult = await restoreUploadedAdminBackup(token, file);
+      setSuccessMsg(`Successfully restored from JSON file! Pastes: ${res.restored_pastes}, Files: ${res.restored_files}, Reports: ${res.restored_reports}${res.settings_updated ? ', Settings reloaded' : ''}.`);
+    } catch (err) {
+      if (err instanceof APIError && (err.status === 401 || err.status === 404)) {
+        onUnauthorized();
+        return;
+      }
+      setError(err instanceof APIError ? err.message : 'Failed to restore uploaded JSON file.');
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="border-2 border-surface-variant bg-surface-container-lowest p-4 sm:p-6 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b-2 border-surface-variant pb-4">
+          <div>
+            <h2 className="font-mono text-sm font-bold text-secondary uppercase tracking-wider">SYSTEM BACKUPS & RESTORE</h2>
+            <p className="text-xs font-mono text-on-surface-variant mt-1">
+              Create instant server snapshots, download backups, or 1-Click restore recent snapshots safely.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleCreateSnapshot}
+            disabled={creating || loading}
+            className="inline-flex min-h-[40px] items-center justify-center border-2 border-secondary text-secondary px-4 py-1.5 text-xs font-mono uppercase tracking-wider transition-all hover:bg-secondary hover:text-black active:translate-y-[1px] disabled:opacity-60"
+          >
+            {creating ? 'CREATING...' : '+ CREATE SNAPSHOT NOW'}
+          </button>
+        </div>
+
+        {successMsg && (
+          <div role="status" className="border-2 border-success-green bg-success-green/10 px-4 py-3">
+            <p className="text-sm font-mono text-success-green">✓ {successMsg}</p>
+          </div>
+        )}
+        {error && (
+          <div role="alert" className="border-2 border-danger-red bg-error-container/20 px-4 py-3">
+            <p className="text-sm font-mono text-error">⚠ ERROR: {error}</p>
+          </div>
+        )}
+
+        {loading ? (
+          <p className="py-8 text-center text-sm font-mono text-on-surface-variant">LOADING BACKUP SNAPSHOTS...</p>
+        ) : backups.length === 0 ? (
+          <div className="py-8 text-center border-2 border-dashed border-surface-variant p-6">
+            <p className="text-sm font-mono text-on-surface-variant">No backup snapshots found in server storage.</p>
+            <button
+              type="button"
+              onClick={handleCreateSnapshot}
+              disabled={creating}
+              className="mt-4 inline-flex min-h-[40px] items-center justify-center border-2 border-secondary text-secondary px-4 py-1.5 text-xs font-mono uppercase tracking-wider hover:bg-secondary hover:text-black"
+            >
+              CREATE FIRST SNAPSHOT
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left font-mono text-xs">
+              <thead>
+                <tr className="border-b-2 border-surface-variant text-on-surface-variant uppercase tracking-wider">
+                  <th className="py-3 px-3">SNAPSHOT FILENAME</th>
+                  <th className="py-3 px-3">FORMAT</th>
+                  <th className="py-3 px-3">SIZE</th>
+                  <th className="py-3 px-3">CREATED</th>
+                  <th className="py-3 px-3 text-right">ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-surface-variant">
+                {backups.map((b) => (
+                  <tr key={b.filename} className="hover:bg-surface-container-low/50 transition-colors">
+                    <td className="py-3 px-3 font-semibold text-secondary">{b.filename}</td>
+                    <td className="py-3 px-3">
+                      <span className="inline-block border border-outline px-1.5 py-0.5 text-[10px] uppercase font-bold text-outline">
+                        {b.format}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 text-on-surface-variant">{formatFileSize(b.size_bytes)}</td>
+                    <td className="py-3 px-3 text-on-surface-variant">{formatRelativeTime(b.created_at)}</td>
+                    <td className="py-3 px-3 text-right space-x-2">
+                      <a
+                        href={getAdminBackupDownloadUrl(token, b.filename)}
+                        download={b.filename}
+                        className="inline-flex min-h-[32px] items-center border border-secondary text-secondary px-2.5 py-1 text-[11px] uppercase tracking-wider hover:bg-secondary hover:text-black transition-colors"
+                      >
+                        [ DOWNLOAD ]
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleRestoreSnapshot(b.filename)}
+                        disabled={restoringFilename === b.filename}
+                        className="inline-flex min-h-[32px] items-center border border-warning-orange text-warning-orange px-2.5 py-1 text-[11px] uppercase tracking-wider hover:bg-warning-orange hover:text-black transition-colors disabled:opacity-50"
+                      >
+                        {restoringFilename === b.filename ? 'RESTORING...' : '[ RESTORE ]'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="border-2 border-surface-variant bg-surface-container-lowest p-4 sm:p-6 space-y-3">
+        <h3 className="font-mono text-xs font-bold text-secondary uppercase tracking-wider">SAFE UPLOAD RESTORE (.JSON ONLY)</h3>
+        <p className="text-xs font-mono text-on-surface-variant">
+          Upload an external JSON backup file for strict schema validation & parameterized restoration.
+        </p>
+        <div className="flex items-center gap-3 pt-2">
+          <label className="inline-flex min-h-[40px] cursor-pointer items-center justify-center border-2 border-surface-variant text-on-surface px-4 py-1.5 text-xs font-mono uppercase tracking-wider hover:border-secondary hover:text-secondary">
+            <span>{uploading ? 'UPLOADING & VALIDATING...' : 'SELECT JSON FILE TO RESTORE'}</span>
+            <input
+              type="file"
+              accept=".json"
+              onChange={handleUploadRestore}
+              disabled={uploading}
+              className="hidden"
+            />
+          </label>
+        </div>
+      </div>
     </div>
   );
 }

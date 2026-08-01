@@ -281,3 +281,27 @@ export const REPORT_REASONS: { value: string; label: string }[] = [
   { value: 'personal_info', label: 'Personal Information' },
   { value: 'other', label: 'Other' },
 ];
+
+// ---------------------------------------------------------------------------
+// Admin Backup types
+// ---------------------------------------------------------------------------
+
+export interface AdminBackupItem {
+  filename: string;
+  size_bytes: number;
+  created_at: string;
+  format: 'json' | 'sql' | 'sql.gz';
+}
+
+export interface AdminBackupListResponse {
+  backups: AdminBackupItem[];
+}
+
+export interface AdminRestoreResult {
+  success: boolean;
+  restored_pastes: number;
+  restored_files: number;
+  restored_reports: number;
+  settings_updated: boolean;
+}
+

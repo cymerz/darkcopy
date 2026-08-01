@@ -14,6 +14,9 @@ import type {
   ReportStatus,
   PasteSummary,
   FileSummary,
+  AdminBackupItem,
+  AdminBackupListResponse,
+  AdminRestoreResult,
 } from './types';
 import { APIError } from './types';
 
@@ -461,3 +464,74 @@ export async function deleteAdminReport(
     },
   );
 }
+
+// ---------------------------------------------------------------------------
+// Admin Backup API
+// ---------------------------------------------------------------------------
+
+/** GET /admin/backups — list available snapshot files. */
+export async function getAdminBackups(
+  token: string,
+): Promise<AdminBackupListResponse> {
+  return apiFetch<AdminBackupListResponse>('/admin/backups', {
+    cache: 'no-store',
+    headers: { 'X-Admin-Token': token },
+  });
+}
+
+/** POST /admin/backups/create — trigger creation of an instant backup snapshot. */
+export async function createAdminBackup(
+  token: string,
+): Promise<{ success: boolean; backup: AdminBackupItem }> {
+  return apiFetch<{ success: boolean; backup: AdminBackupItem }>('/admin/backups/create', {
+    method: 'POST',
+    headers: { 'X-Admin-Token': token },
+  });
+}
+
+/** POST /admin/backups/restore — restore system state from a server snapshot. */
+export async function restoreRecentAdminBackup(
+  token: string,
+  filename: string,
+): Promise<AdminRestoreResult> {
+  return apiFetch<AdminRestoreResult>('/admin/backups/restore', {
+    method: 'POST',
+    headers: {
+      'X-Admin-Token': token,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ filename }),
+  });
+}
+
+/** POST /admin/backups/restore-json — upload & restore a JSON backup file. */
+export async function restoreUploadedAdminBackup(
+  token: string,
+  file: File,
+): Promise<AdminRestoreResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const url = buildUrl('/admin/backups/restore-json');
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'X-Admin-Token': token,
+      Accept: 'application/json',
+    },
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => ({ error: 'Upload failed', code: 'UNKNOWN' }));
+    throw new APIError(errorBody.error || 'Upload failed', errorBody.code || 'UNKNOWN', res.status);
+  }
+
+  return (await res.json()) as AdminRestoreResult;
+}
+
+/** Helper to trigger browser download for a snapshot file. */
+export function getAdminBackupDownloadUrl(token: string, filename: string): string {
+  return buildUrl(`/admin/backups/download/${encodeURIComponent(filename)}`);
+}
+

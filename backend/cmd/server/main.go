@@ -19,6 +19,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/cymerz/darkcopy/internal/access"
 	"github.com/cymerz/darkcopy/internal/admin"
+	"github.com/cymerz/darkcopy/internal/backup"
 	"github.com/cymerz/darkcopy/internal/db"
 	"github.com/cymerz/darkcopy/internal/expiry"
 	"github.com/cymerz/darkcopy/internal/file"
@@ -361,6 +362,21 @@ func main() {
 		"total_cap_mb", uploadMaxMemTotalBytes/(1024*1024),
 	)
 	adminHandler := handler.NewAdminHandler(adminSvc, settingsMgr, reportSvc, adminToken)
+	
+	// Initialize backup service.
+	backupDir := envOrDefault("BACKUP_DIR", "./backups")
+	backupRepo := db.NewBackupRepo(writePool, readPool)
+	if rdb != nil {
+		backupRepo = backupRepo.WithRedis(rdb)
+	}
+	backupSvc, bErr := backup.NewService(backupDir, backupRepo, backupRepo)
+	if bErr != nil {
+		logger.Warn("failed to initialize backup service", "error", bErr)
+	} else {
+		adminHandler.WithBackupService(backupSvc)
+		logger.Info("initialized backup service", "directory", backupDir)
+	}
+
 	reportHandler := handler.NewReportHandler(reportSvc)
 	// Limit reports to 20 per IP per day to curb spam.
 	reportHandler.SetQuota(dailyQuota, 20)

@@ -5,12 +5,15 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/cymerz/darkcopy/internal/admin"
+	"github.com/cymerz/darkcopy/internal/backup"
 	"github.com/cymerz/darkcopy/internal/report"
 	"github.com/cymerz/darkcopy/internal/settings"
 )
@@ -23,6 +26,15 @@ type AdminService interface {
 	DeleteFile(ctx context.Context, slug string) error
 	Stats(ctx context.Context) (*admin.Stats, error)
 	PurgeExpired(ctx context.Context) (int, error)
+}
+
+// BackupService defines operations for managing system backups and restores.
+type BackupService interface {
+	ListBackups(ctx context.Context) ([]backup.BackupInfo, error)
+	CreateSnapshot(ctx context.Context) (*backup.BackupInfo, error)
+	ValidateFilename(filename string) (string, error)
+	RestoreServerSnapshot(ctx context.Context, filename string) (*backup.RestoreResult, error)
+	RestoreJSONPayload(ctx context.Context, raw []byte) (*backup.RestoreResult, error)
 }
 
 // SettingsManager exposes read/update of runtime settings to the admin handler.
@@ -49,6 +61,7 @@ type AdminHandler struct {
 	adminService AdminService
 	settings     SettingsManager
 	reports      ReportManager
+	backups      BackupService
 	token        string
 }
 
@@ -62,6 +75,12 @@ func NewAdminHandler(as AdminService, settingsMgr SettingsManager, reportMgr Rep
 		reports:      reportMgr,
 		token:        token,
 	}
+}
+
+// WithBackupService attaches a BackupService to the AdminHandler.
+func (h *AdminHandler) WithBackupService(bs BackupService) *AdminHandler {
+	h.backups = bs
+	return h
 }
 
 // RegisterAdminRoutes mounts all admin routes under the /admin prefix. Mounting
@@ -80,6 +99,11 @@ func RegisterAdminRoutes(r chi.Router, h *AdminHandler) {
 		ar.Get("/reports", h.HandleListReports)
 		ar.Patch("/reports/{id}", h.HandleUpdateReportStatus)
 		ar.Delete("/reports/{id}", h.HandleDeleteReport)
+		ar.Get("/backups", h.HandleListBackups)
+		ar.Post("/backups/create", h.HandleCreateSnapshot)
+		ar.Get("/backups/download/{filename}", h.HandleDownloadBackup)
+		ar.Post("/backups/restore", h.HandleRestoreRecentBackup)
+		ar.Post("/backups/restore-json", h.HandleRestoreUploadedJSON)
 	})
 }
 
@@ -360,3 +384,137 @@ func paginationParams(r *http.Request) (limit, offset int) {
 	}
 	return limit, offset
 }
+
+// HandleListBackups returns available backup snapshots.
+func (h *AdminHandler) HandleListBackups(w http.ResponseWriter, r *http.Request) {
+	if h.backups == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "Backup service not available", "BACKUP_UNAVAILABLE")
+		return
+	}
+	list, err := h.backups.ListBackups(r.Context())
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to list backups", "INTERNAL_ERROR")
+		return
+	}
+	if list == nil {
+		list = []backup.BackupInfo{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"backups": list})
+}
+
+// HandleCreateSnapshot generates a new backup snapshot file on the server.
+func (h *AdminHandler) HandleCreateSnapshot(w http.ResponseWriter, r *http.Request) {
+	if h.backups == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "Backup service not available", "BACKUP_UNAVAILABLE")
+		return
+	}
+	info, err := h.backups.CreateSnapshot(r.Context())
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to create snapshot", "INTERNAL_ERROR")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "backup": info})
+}
+
+// HandleDownloadBackup streams a backup snapshot file to the client.
+func (h *AdminHandler) HandleDownloadBackup(w http.ResponseWriter, r *http.Request) {
+	if h.backups == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "Backup service not available", "BACKUP_UNAVAILABLE")
+		return
+	}
+	filename := chi.URLParam(r, "filename")
+	fullPath, err := h.backups.ValidateFilename(filename)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error(), "BAD_REQUEST")
+		return
+	}
+
+	file, err := os.Open(fullPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			writeJSONError(w, http.StatusNotFound, "Backup file not found", "NOT_FOUND")
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "Failed opening backup file", "INTERNAL_ERROR")
+		return
+	}
+	defer file.Close()
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	_, _ = io.Copy(w, file)
+}
+
+// HandleRestoreRecentBackup restores state from a server snapshot file.
+func (h *AdminHandler) HandleRestoreRecentBackup(w http.ResponseWriter, r *http.Request) {
+	if h.backups == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "Backup service not available", "BACKUP_UNAVAILABLE")
+		return
+	}
+
+	var body struct {
+		Filename string `json:"filename"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Filename == "" {
+		writeJSONError(w, http.StatusBadRequest, "Invalid request body: filename required", "BAD_REQUEST")
+		return
+	}
+
+	res, err := h.backups.RestoreServerSnapshot(r.Context(), body.Filename)
+	if err != nil {
+		if errors.Is(err, backup.ErrBackupNotFound) {
+			writeJSONError(w, http.StatusNotFound, "Backup snapshot not found", "NOT_FOUND")
+			return
+		}
+		if errors.Is(err, backup.ErrPathTraversal) || errors.Is(err, backup.ErrInvalidFilename) || errors.Is(err, backup.ErrUnsupportedFormat) {
+			writeJSONError(w, http.StatusBadRequest, err.Error(), "BAD_REQUEST")
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "Failed to restore backup: "+err.Error(), "INTERNAL_ERROR")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, res)
+}
+
+// HandleRestoreUploadedJSON validates and restores state from an uploaded JSON file payload.
+func (h *AdminHandler) HandleRestoreUploadedJSON(w http.ResponseWriter, r *http.Request) {
+	if h.backups == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "Backup service not available", "BACKUP_UNAVAILABLE")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 100<<20) // Cap upload at 100MB
+	var raw []byte
+	var err error
+
+	if contentType := r.Header.Get("Content-Type"); len(contentType) >= 19 && contentType[:19] == "multipart/form-data" {
+		file, _, ferr := r.FormFile("file")
+		if ferr != nil {
+			writeJSONError(w, http.StatusBadRequest, "Missing file in multipart request", "BAD_REQUEST")
+			return
+		}
+		defer file.Close()
+		raw, err = io.ReadAll(file)
+	} else {
+		raw, err = io.ReadAll(r.Body)
+	}
+
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Failed to read backup payload", "BAD_REQUEST")
+		return
+	}
+
+	res, err := h.backups.RestoreJSONPayload(r.Context(), raw)
+	if err != nil {
+		if errors.Is(err, backup.ErrInvalidBackupData) {
+			writeJSONError(w, http.StatusBadRequest, err.Error(), "VALIDATION_ERROR")
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "Failed to restore backup payload: "+err.Error(), "INTERNAL_ERROR")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, res)
+}
+
