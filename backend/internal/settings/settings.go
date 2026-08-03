@@ -58,6 +58,9 @@ type Settings struct {
 	// MaxDailyUploadBytesPerIP limits the total uploaded size (in bytes) per individual IP per day.
 	// 0 means unlimited.
 	MaxDailyUploadBytesPerIP int64 `json:"max_daily_upload_bytes_per_ip"`
+	// MaxDailyUploads limits the total number of file uploads across all IPs per day.
+	// 0 means unlimited.
+	MaxDailyUploads int `json:"max_daily_uploads"`
 	// UseDirectUpload enables direct client-to-S3 uploads for the Web UI.
 	// Falls back to proxy upload if the storage provider does not support it.
 	UseDirectUpload bool `json:"use_direct_upload"`
@@ -127,6 +130,9 @@ func (s Settings) Validate() error {
 	}
 	if s.MaxDailyUploadBytesPerIP < 0 {
 		return errors.New("per-IP daily upload size limit must not be negative")
+	}
+	if s.MaxDailyUploads < 0 || s.MaxDailyUploads > MaxDailyLimit {
+		return ErrInvalidDailyLimit
 	}
 	return nil
 }

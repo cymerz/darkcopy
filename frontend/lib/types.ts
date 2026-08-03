@@ -237,6 +237,7 @@ export interface AdminSettings {
   file_expiry_options: AdminExpiryOption[];
   max_pastes_per_day_per_ip: number;
   max_file_uploads_per_day_per_ip: number;
+  max_daily_uploads?: number;
   disable_new_pastes?: boolean;
   disable_file_uploads?: boolean;
   max_daily_upload_bytes?: number;

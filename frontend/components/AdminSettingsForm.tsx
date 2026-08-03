@@ -274,6 +274,22 @@ export function AdminSettingsForm({
           />
           <span className="block text-xs text-gray-500 dark:text-gray-500">0 = unlimited</span>
         </label>
+        <label className="space-y-2">
+          <span className="block text-sm font-mono text-secondary uppercase tracking-wider">
+            Max Global Uploads / Day
+          </span>
+          <input
+            type="number"
+            min={0}
+            value={settings.max_daily_uploads ?? 0}
+            onChange={(e) =>
+              patch({ max_daily_uploads: Number(e.target.value) })
+            }
+            disabled={saving}
+            className={INPUT_CLASS}
+          />
+          <span className="block text-xs text-gray-500 dark:text-gray-500">0 = unlimited, caps total uploads across all users</span>
+        </label>
       </div>
 
       {/* Daily size limits */}

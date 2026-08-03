@@ -160,6 +160,21 @@ func (h *FileHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enforce global daily upload count limit when configured.
+	if h.quota != nil && h.settings != nil {
+		globalLimit := h.settings.Get().MaxDailyUploads
+		if globalLimit > 0 {
+			if allowed, _ := h.quota.Allow("global_uploads", globalLimit); !allowed {
+				writeJSON(w, http.StatusTooManyRequests, errorResponse{
+					Error:  "Global daily upload limit reached. Try again tomorrow.",
+					Code:   "GLOBAL_DAILY_LIMIT_REACHED",
+					Status: http.StatusTooManyRequests,
+				})
+				return
+			}
+		}
+	}
+
 	// Enforce per-IP daily upload limit when configured.
 	if h.quota != nil && h.settings != nil {
 		limit := h.settings.Get().MaxFileUploadsPerDayPerIP
@@ -649,6 +664,16 @@ func (h *FileHandler) HandlePresignUpload(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Enforce direct upload enabled setting
+	if h.settings != nil && !h.settings.Get().UseDirectUpload {
+		writeJSON(w, http.StatusForbidden, errorResponse{
+			Error:  "Direct S3 upload is currently disabled.",
+			Code:   "DIRECT_UPLOAD_DISABLED",
+			Status: http.StatusForbidden,
+		})
+		return
+	}
+
 	var req presignUploadRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{
@@ -674,6 +699,21 @@ func (h *FileHandler) HandlePresignUpload(w http.ResponseWriter, r *http.Request
 			Status: http.StatusRequestEntityTooLarge,
 		})
 		return
+	}
+
+	// Enforce global daily upload count limit when configured.
+	if h.quota != nil && h.settings != nil {
+		globalLimit := h.settings.Get().MaxDailyUploads
+		if globalLimit > 0 {
+			if allowed, _ := h.quota.Allow("global_uploads", globalLimit); !allowed {
+				writeJSON(w, http.StatusTooManyRequests, errorResponse{
+					Error:  "Global daily upload limit reached. Try again tomorrow.",
+					Code:   "GLOBAL_DAILY_LIMIT_REACHED",
+					Status: http.StatusTooManyRequests,
+				})
+				return
+			}
+		}
 	}
 
 	// Enforce per-IP daily upload limit when configured.
@@ -762,6 +802,16 @@ func (h *FileHandler) HandleRegisterUploadedFile(w http.ResponseWriter, r *http.
 		writeJSON(w, http.StatusForbidden, errorResponse{
 			Error:  "Unggah file sedang dinonaktifkan sementara oleh administrator.",
 			Code:   "UPLOADS_DISABLED",
+			Status: http.StatusForbidden,
+		})
+		return
+	}
+
+	// Enforce direct upload enabled setting
+	if h.settings != nil && !h.settings.Get().UseDirectUpload {
+		writeJSON(w, http.StatusForbidden, errorResponse{
+			Error:  "Direct S3 upload is currently disabled.",
+			Code:   "DIRECT_UPLOAD_DISABLED",
 			Status: http.StatusForbidden,
 		})
 		return
