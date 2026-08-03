@@ -63,7 +63,8 @@ const ENDPOINTS: Endpoint[] = [
     responseBody: `// For JSON/API clients (or with Accept: application/json header):
 {
   "slug": "abc12345",
-  "url": "/abc12345"
+  "url": "/abc12345",
+  "full_url": "${API_DOMAIN}/abc12345"
 }
 
 // For CLI clients (curl/wget) by default:
@@ -186,7 +187,8 @@ ${API_DOMAIN}/f/file456
 {
   "success": true,
   "slug": "file456",
-  "url": "${API_DOMAIN}/f/file456",
+  "url": "/f/file456",
+  "full_url": "${API_DOMAIN}/f/file456",
   "md5_hash": "d41d8cd98f00b204e9800998ecf8427e"
 }
 
@@ -201,7 +203,8 @@ ${API_DOMAIN}/f/file456
 {
   "success": true,
   "slug": "file456",
-  "url": "${API_DOMAIN}/f/file456"
+  "url": "/f/file456",
+  "full_url": "${API_DOMAIN}/f/file456"
 }`,
     examples: [
       { label: 'Server proxy (cURL)', code: `curl -F "file=@screenshot.png" -F "expires_in=60" ${API_DOMAIN}/api/upload` },
