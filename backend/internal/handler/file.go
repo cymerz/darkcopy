@@ -313,7 +313,7 @@ func (h *FileHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"success":  true,
 		"slug":     record.Slug,
-		"url":      fmt.Sprintf("/f/%s", record.Slug),
+		"url":      getBaseURL(r) + "/f/" + record.Slug,
 		"md5_hash": record.MD5Hash,
 	})
 }
@@ -818,7 +818,7 @@ func (h *FileHandler) HandleRegisterUploadedFile(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"success": true,
 		"slug":    record.Slug,
-		"url":     fmt.Sprintf("/f/%s", record.Slug),
+		"url":     getBaseURL(r) + "/f/" + record.Slug,
 	})
 }
 

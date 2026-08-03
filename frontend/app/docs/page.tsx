@@ -169,28 +169,49 @@ const { slug, url } = await res.json();`,
     method: 'POST',
     path: '/api/upload',
     title: 'Upload a File',
-    desc: 'Upload a file via multipart form. CLI clients (curl/wget) receive a plain-text URL. API clients receive a JSON response with slug, URL, and MD5 hash.',
+    desc: 'Upload a file via multipart form (server proxy). When use_direct_upload is enabled, use the 3-step direct S3 flow: POST /api/upload/presign → PUT to S3 → POST /api/upload/register. CLI clients receive a plain-text URL; API clients receive JSON with slug, URL, and MD5 hash.',
     headers: [
-      { name: 'Content-Type', type: 'string', required: true, desc: 'Must be multipart/form-data.' },
+      { name: 'Content-Type', type: 'string', required: true, desc: 'multipart/form-data (server proxy) or application/json (direct S3 presign/register).' },
     ],
     params: [
-      { name: 'file', type: 'binary', required: true, desc: 'The file to upload.' },
+      { name: 'file', type: 'binary', required: true, desc: 'The file to upload (server proxy only).' },
       { name: 'visibility', type: 'string', required: false, desc: '"public", "unlisted", or "password_protected".' },
       { name: 'password', type: 'string', required: false, desc: 'Required for password_protected visibility.' },
       { name: 'expires_in', type: 'string', required: false, desc: 'Duration in minutes (e.g. "60") or Go duration (e.g. "1h").' },
     ],
-    responseBody: `// For CLI clients (curl/wget) by default:
+    responseBody: `// Server proxy — CLI clients (curl/wget) by default:
 ${API_DOMAIN}/f/file456
 
-// For JSON/API clients (or with Accept: application/json header):
+// Server proxy — JSON/API clients (Accept: application/json):
 {
   "success": true,
   "slug": "file456",
-  "url": "/f/file456",
+  "url": "${API_DOMAIN}/f/file456",
   "md5_hash": "d41d8cd98f00b204e9800998ecf8427e"
+}
+
+// Direct S3 — Step 1: POST /api/upload/presign response:
+{
+  "slug": "file456",
+  "storage_key": "uploads/file456/screenshot.png",
+  "upload_url": "https://s3.example.com/uploads/file456/screenshot.png?X-Amz-..."
+}
+
+// Direct S3 — Step 3: POST /api/upload/register response:
+{
+  "success": true,
+  "slug": "file456",
+  "url": "${API_DOMAIN}/f/file456"
 }`,
     examples: [
-      { label: 'cURL', code: `curl -F "file=@screenshot.png" -F "expires_in=60" ${API_DOMAIN}/api/upload` },
+      { label: 'Server proxy (cURL)', code: `curl -F "file=@screenshot.png" -F "expires_in=60" ${API_DOMAIN}/api/upload` },
+      { label: 'Direct S3 — Step 1: Presign', code: `curl -s -X POST ${API_DOMAIN}/api/upload/presign \\
+  -H "Content-Type: application/json" \\
+  -d '{"filename":"screenshot.png","size_bytes":2048,"mime_type":"image/png","visibility":"public","expires_in":"60"}'` },
+      { label: 'Direct S3 — Step 2: Upload to S3', code: `curl -X PUT --data-binary @screenshot.png "$UPLOAD_URL"` },
+      { label: 'Direct S3 — Step 3: Register', code: `curl -s -X POST ${API_DOMAIN}/api/upload/register \\
+  -H "Content-Type: application/json" \\
+  -d '{"slug":"file456","filename":"screenshot.png","size_bytes":2048,"mime_type":"image/png","storage_key":"uploads/file456/screenshot.png","visibility":"public","expires_in":"60","md5_hash":"d41d8cd98f00b204e9800998ecf8427e"}'` },
     ],
   },
   {

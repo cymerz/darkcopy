@@ -120,7 +120,8 @@ export function PasteForm({ languages, expiryOptions, disabled }: PasteFormProps
       // Burn-after-read: show URL on this page, never redirect to view
       if (burnAfterRead) {
         const base = typeof window !== 'undefined' ? window.location.origin : '';
-        let url = result.url ? `${base}${result.url}` : `${base}/${slug}`;
+        const rawUrl = result.url ?? `/${slug}`;
+        let url = /^https?:\/\//.test(rawUrl) ? rawUrl : `${base}${rawUrl}`;
         if (isEncrypted) {
           url += `#key=${encryptionKey}`;
         }
