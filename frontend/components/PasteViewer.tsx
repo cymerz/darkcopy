@@ -56,6 +56,7 @@ export function PasteViewer({ paste }: PasteViewerProps) {
   const [customKeyInput, setCustomKeyInput] = useState('');
   const [decryptionError, setDecryptionError] = useState<string | null>(null);
   const [decryptedContent, setDecryptedContent] = useState<string | null>(null);
+  const [highlightedHtml, setHighlightedHtml] = useState(paste.highlighted_html);
 
   const [DOMPurify, setDOMPurify] = useState<typeof DOMPurifyType | null>(null);
 
@@ -107,6 +108,7 @@ export function PasteViewer({ paste }: PasteViewerProps) {
     try {
       const fullPaste = await getPaste(paste.slug, false);
       setContentState(fullPaste.content);
+      setHighlightedHtml(fullPaste.highlighted_html);
       setRevealed(true);
     } catch (err) {
       alert(err instanceof APIError ? err.message : 'Failed to retrieve paste content.');
@@ -304,7 +306,7 @@ export function PasteViewer({ paste }: PasteViewerProps) {
           </div>
           <div className="min-w-0 flex-1 overflow-x-auto px-4 py-4 font-mono text-sm leading-6 text-on-surface">
             {showHighlighting && !paste.is_encrypted && DOMPurify ? (
-              <div className="darkcopy-code" dangerouslySetInnerHTML={{ __html: themeHighlight(DOMPurify.sanitize(paste.highlighted_html)) }} />
+              <div className="darkcopy-code" dangerouslySetInnerHTML={{ __html: themeHighlight(DOMPurify.sanitize(highlightedHtml)) }} />
             ) : (
               <pre className="whitespace-pre">{displayContent}</pre>
             )}

@@ -329,11 +329,12 @@ func (h *PasteHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If the client wants JSON (e.g. fetch API), return 201 with slug and absolute URL.
+	// If the client wants JSON (e.g. fetch API), return 201 with slug and URL.
 	if wantsJSON(r) {
-		writeJSON(w, http.StatusCreated, map[string]string{
-			"slug": created.Slug,
-			"url":  getBaseURL(r) + "/" + created.Slug,
+		writeJSON(w, http.StatusCreated, map[string]interface{}{
+			"slug":     created.Slug,
+			"url":      "/" + created.Slug,
+			"full_url": getBaseURL(r) + "/" + created.Slug,
 		})
 		return
 	}
