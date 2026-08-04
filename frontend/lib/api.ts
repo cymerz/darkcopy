@@ -311,11 +311,19 @@ export async function getAdminStats(token: string): Promise<AdminStats> {
   });
 }
 
-/** GET /admin/pastes — list every paste (any visibility, including expired). */
+/** GET /admin/pastes — list every paste (any visibility, including expired). Supports pagination and search. */
 export async function getAdminPastes(
   token: string,
+  limit?: number,
+  offset?: number,
+  q?: string,
 ): Promise<AdminPasteListResponse> {
-  return apiFetch<AdminPasteListResponse>('/admin/pastes', {
+  const params = new URLSearchParams();
+  if (limit !== undefined) params.set('limit', String(limit));
+  if (offset !== undefined) params.set('offset', String(offset));
+  if (q) params.set('q', q);
+  const query = params.toString();
+  return apiFetch<AdminPasteListResponse>(`/admin/pastes${query ? `?${query}` : ''}`, {
     cache: 'no-store',
     headers: { 'X-Admin-Token': token },
   });
@@ -335,11 +343,19 @@ export async function deleteAdminPaste(
   );
 }
 
-/** GET /admin/files — list every uploaded file. */
+/** GET /admin/files — list every uploaded file. Supports pagination and search. */
 export async function getAdminFiles(
   token: string,
+  limit?: number,
+  offset?: number,
+  q?: string,
 ): Promise<AdminFileListResponse> {
-  return apiFetch<AdminFileListResponse>('/admin/files', {
+  const params = new URLSearchParams();
+  if (limit !== undefined) params.set('limit', String(limit));
+  if (offset !== undefined) params.set('offset', String(offset));
+  if (q) params.set('q', q);
+  const query = params.toString();
+  return apiFetch<AdminFileListResponse>(`/admin/files${query ? `?${query}` : ''}`, {
     cache: 'no-store',
     headers: { 'X-Admin-Token': token },
   });

@@ -39,6 +39,18 @@ const REASON_LABELS: Record<string, string> = Object.fromEntries(REPORT_REASONS.
 function reasonLabel(reason: string): string { return REASON_LABELS[reason] ?? reason; }
 function isExpired(expiresAt: string | null): boolean { if (!expiresAt) return false; return new Date(expiresAt).getTime() < Date.now(); }
 
+const PAGE_SIZE = 50;
+
+/** Debounced value hook — returns the value after a delay. */
+function useDebouncedValue<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+}
+
 const REPORT_STATUS_LABELS: Record<string, string> = { pending: 'Pending', reviewed: 'Reviewed', dismissed: 'Dismissed' };
 
 function TabBar({ tabs, current, onChange }: { tabs: { key: string; label: string; count?: number; alert?: boolean }[]; current: string; onChange: (k: string) => void }) {
@@ -132,6 +144,17 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
   const [notice, setNotice] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
+  // Pagination + search state for pastes and files
+  const [pasteSearch, setPasteSearch] = useState('');
+  const [pastePage, setPastePage] = useState(0);
+  const [pasteTotal, setPasteTotal] = useState(0);
+  const [fileSearch, setFileSearch] = useState('');
+  const [filePage, setFilePage] = useState(0);
+  const [fileTotal, setFileTotal] = useState(0);
+
+  const debouncedPasteSearch = useDebouncedValue(pasteSearch, 300);
+  const debouncedFileSearch = useDebouncedValue(fileSearch, 300);
+
   const reload = useCallback(() => { setLoading(true); setReloadKey((k) => k + 1); }, []);
   const topPastes = stats?.top_pastes || [];
   const topFiles = stats?.top_files || [];
@@ -152,15 +175,19 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
 
   useEffect(() => {
     if (tab !== 'pastes') return; let cancelled = false;
-    (async () => { try { setLoadingPastes(true); const r = await getAdminPastes(token); if (cancelled) return; setPastes(r.pastes ?? []); setError(null); } catch (err) { if (cancelled) return; if (err instanceof APIError && (err.status === 401 || err.status === 404)) { onLogout(); return; } setError('Failed to load paste list.'); } finally { if (!cancelled) setLoadingPastes(false); } })();
+    (async () => { try { setLoadingPastes(true); const r = await getAdminPastes(token, PAGE_SIZE, pastePage * PAGE_SIZE, debouncedPasteSearch || undefined); if (cancelled) return; setPastes(r.pastes ?? []); setPasteTotal(r.total ?? 0); setError(null); } catch (err) { if (cancelled) return; if (err instanceof APIError && (err.status === 401 || err.status === 404)) { onLogout(); return; } setError('Failed to load paste list.'); } finally { if (!cancelled) setLoadingPastes(false); } })();
     return () => { cancelled = true; };
-  }, [token, onLogout, tab, reloadKey]);
+  }, [token, onLogout, tab, reloadKey, pastePage, debouncedPasteSearch]);
 
   useEffect(() => {
     if (tab !== 'files') return; let cancelled = false;
-    (async () => { try { setLoadingFiles(true); const r = await getAdminFiles(token); if (cancelled) return; setFiles(r.files ?? []); setError(null); } catch (err) { if (cancelled) return; if (err instanceof APIError && (err.status === 401 || err.status === 404)) { onLogout(); return; } setError('Failed to load file list.'); } finally { if (!cancelled) setLoadingFiles(false); } })();
+    (async () => { try { setLoadingFiles(true); const r = await getAdminFiles(token, PAGE_SIZE, filePage * PAGE_SIZE, debouncedFileSearch || undefined); if (cancelled) return; setFiles(r.files ?? []); setFileTotal(r.total ?? 0); setError(null); } catch (err) { if (cancelled) return; if (err instanceof APIError && (err.status === 401 || err.status === 404)) { onLogout(); return; } setError('Failed to load file list.'); } finally { if (!cancelled) setLoadingFiles(false); } })();
     return () => { cancelled = true; };
-  }, [token, onLogout, tab, reloadKey]);
+  }, [token, onLogout, tab, reloadKey, filePage, debouncedFileSearch]);
+
+  // Reset page to 0 when search query changes
+  useEffect(() => { setPastePage(0); }, [debouncedPasteSearch]);
+  useEffect(() => { setFilePage(0); }, [debouncedFileSearch]);
 
   useEffect(() => {
     if (tab !== 'reports') return; let cancelled = false;
@@ -348,10 +375,60 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
             </div>
           </div>
         </div>
-      ) : tab === 'pastes' ? loadingPastes ? <p className="py-8 text-center text-xs font-mono text-on-surface-variant">LOADING PASTES...</p> : (
-        <ListSection items={pastes} busySlug={busySlug} onDelete={handleDeletePaste} type="paste" />
-      ) : tab === 'files' ? loadingFiles ? <p className="py-8 text-center text-xs font-mono text-on-surface-variant">LOADING FILES...</p> : (
-        <ListSection items={files} busySlug={busySlug} onDelete={handleDeleteFile} type="file" />
+      ) : tab === 'pastes' ? (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <input type="text" value={pasteSearch} onChange={(e) => setPasteSearch(e.target.value)}
+              placeholder="Search pastes by title, slug, or content..."
+              className="flex-1 min-h-[40px] border-2 border-surface-variant bg-surface-container-lowest px-3 py-2 text-on-surface placeholder-on-surface-variant font-mono text-sm focus:border-secondary focus:outline-none" />
+            {pasteTotal > 0 && <span className="shrink-0 text-xs font-mono text-on-surface-variant">{pasteTotal} result{pasteTotal !== 1 ? 's' : ''}</span>}
+          </div>
+          {loadingPastes ? <p className="py-8 text-center text-xs font-mono text-on-surface-variant">LOADING PASTES...</p> : (
+            <>
+              <ListSection items={pastes} busySlug={busySlug} onDelete={handleDeletePaste} type="paste" />
+              {pasteTotal > PAGE_SIZE && (
+                <div className="flex items-center justify-between px-2">
+                  <button type="button" onClick={() => setPastePage((p) => Math.max(0, p - 1))} disabled={pastePage === 0}
+                    className="inline-flex min-h-[36px] items-center border-2 border-surface-variant text-on-surface-variant px-3 py-1 text-xs font-mono uppercase tracking-wider transition-all hover:border-secondary hover:text-secondary disabled:opacity-40 disabled:cursor-not-allowed">
+                    [ PREV ]
+                  </button>
+                  <span className="text-xs font-mono text-on-surface-variant">Page {pastePage + 1} of {Math.ceil(pasteTotal / PAGE_SIZE)}</span>
+                  <button type="button" onClick={() => setPastePage((p) => p + 1)} disabled={(pastePage + 1) * PAGE_SIZE >= pasteTotal}
+                    className="inline-flex min-h-[36px] items-center border-2 border-surface-variant text-on-surface-variant px-3 py-1 text-xs font-mono uppercase tracking-wider transition-all hover:border-secondary hover:text-secondary disabled:opacity-40 disabled:cursor-not-allowed">
+                    [ NEXT ]
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      ) : tab === 'files' ? (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <input type="text" value={fileSearch} onChange={(e) => setFileSearch(e.target.value)}
+              placeholder="Search files by filename or slug..."
+              className="flex-1 min-h-[40px] border-2 border-surface-variant bg-surface-container-lowest px-3 py-2 text-on-surface placeholder-on-surface-variant font-mono text-sm focus:border-secondary focus:outline-none" />
+            {fileTotal > 0 && <span className="shrink-0 text-xs font-mono text-on-surface-variant">{fileTotal} result{fileTotal !== 1 ? 's' : ''}</span>}
+          </div>
+          {loadingFiles ? <p className="py-8 text-center text-xs font-mono text-on-surface-variant">LOADING FILES...</p> : (
+            <>
+              <ListSection items={files} busySlug={busySlug} onDelete={handleDeleteFile} type="file" />
+              {fileTotal > PAGE_SIZE && (
+                <div className="flex items-center justify-between px-2">
+                  <button type="button" onClick={() => setFilePage((p) => Math.max(0, p - 1))} disabled={filePage === 0}
+                    className="inline-flex min-h-[36px] items-center border-2 border-surface-variant text-on-surface-variant px-3 py-1 text-xs font-mono uppercase tracking-wider transition-all hover:border-secondary hover:text-secondary disabled:opacity-40 disabled:cursor-not-allowed">
+                    [ PREV ]
+                  </button>
+                  <span className="text-xs font-mono text-on-surface-variant">Page {filePage + 1} of {Math.ceil(fileTotal / PAGE_SIZE)}</span>
+                  <button type="button" onClick={() => setFilePage((p) => p + 1)} disabled={(filePage + 1) * PAGE_SIZE >= fileTotal}
+                    className="inline-flex min-h-[36px] items-center border-2 border-surface-variant text-on-surface-variant px-3 py-1 text-xs font-mono uppercase tracking-wider transition-all hover:border-secondary hover:text-secondary disabled:opacity-40 disabled:cursor-not-allowed">
+                    [ NEXT ]
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       ) : loadingReports ? <p className="py-8 text-center text-xs font-mono text-on-surface-variant">LOADING REPORTS...</p> : (
         <ReportsTableSection reports={reports} busyId={busyReportId} onStatus={handleReportStatus} onDeleteContent={handleDeleteReportedContent} onDelete={handleDeleteReport} />
       )}

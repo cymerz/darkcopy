@@ -20,9 +20,11 @@ import (
 
 // AdminService defines the administrative operations used by the handler.
 type AdminService interface {
-	ListPastes(ctx context.Context, limit, offset int) ([]*admin.PasteItem, error)
+	ListPastes(ctx context.Context, limit, offset int, query string) ([]*admin.PasteItem, error)
+	CountPastesWithQuery(ctx context.Context, query string) (int, error)
 	DeletePaste(ctx context.Context, slug string) error
-	ListFiles(ctx context.Context, limit, offset int) ([]*admin.FileItem, error)
+	ListFiles(ctx context.Context, limit, offset int, query string) ([]*admin.FileItem, error)
+	CountFilesWithQuery(ctx context.Context, query string) (int, error)
 	DeleteFile(ctx context.Context, slug string) error
 	Stats(ctx context.Context) (*admin.Stats, error)
 	PurgeExpired(ctx context.Context) (int, error)
@@ -304,8 +306,9 @@ func (h *AdminHandler) HandleDeleteReport(w http.ResponseWriter, r *http.Request
 }
 func (h *AdminHandler) HandleListPastes(w http.ResponseWriter, r *http.Request) {
 	limit, offset := paginationParams(r)
+	query := r.URL.Query().Get("q")
 
-	pastes, err := h.adminService.ListPastes(r.Context(), limit, offset)
+	pastes, err := h.adminService.ListPastes(r.Context(), limit, offset, query)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "Failed to load paste list", "INTERNAL_ERROR")
 		return
@@ -313,7 +316,15 @@ func (h *AdminHandler) HandleListPastes(w http.ResponseWriter, r *http.Request) 
 	if pastes == nil {
 		pastes = []*admin.PasteItem{}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"pastes": pastes})
+
+	total, _ := h.adminService.CountPastesWithQuery(r.Context(), query)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"pastes": pastes,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	})
 }
 
 // HandleDeletePaste deletes a paste by its slug.
@@ -331,11 +342,12 @@ func (h *AdminHandler) HandleDeletePaste(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "slug": slug})
 }
 
-// HandleListFiles returns all uploaded files with optional pagination.
+// HandleListFiles returns all uploaded files with optional pagination and search.
 func (h *AdminHandler) HandleListFiles(w http.ResponseWriter, r *http.Request) {
 	limit, offset := paginationParams(r)
+	query := r.URL.Query().Get("q")
 
-	files, err := h.adminService.ListFiles(r.Context(), limit, offset)
+	files, err := h.adminService.ListFiles(r.Context(), limit, offset, query)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "Failed to load file list", "INTERNAL_ERROR")
 		return
@@ -343,7 +355,15 @@ func (h *AdminHandler) HandleListFiles(w http.ResponseWriter, r *http.Request) {
 	if files == nil {
 		files = []*admin.FileItem{}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"files": files})
+
+	total, _ := h.adminService.CountFilesWithQuery(r.Context(), query)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"files":  files,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	})
 }
 
 // HandleDeleteFile deletes a file (record and blob) by its slug.

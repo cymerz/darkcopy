@@ -160,14 +160,28 @@ func (r *PasteRepo) ListPublicRecent(ctx context.Context, limit int) ([]*paste.P
 }
 
 // ListAllPastes returns all pastes (any visibility, including expired) ordered
-// by most recent first. Intended for administrative use only.
-func (r *PasteRepo) ListAllPastes(ctx context.Context, limit, offset int) ([]*admin.PasteItem, error) {
-	rows, err := r.readPool.Query(ctx, `
-		SELECT slug, title, language, visibility, (password_hash IS NOT NULL), created_at, expires_at, views
-		FROM pastes
-		ORDER BY created_at DESC
-		LIMIT $1 OFFSET $2
-	`, limit, offset)
+// by most recent first. Intended for administrative use only. When query is
+// non-empty, results are filtered by ILIKE match on title, slug, or content.
+func (r *PasteRepo) ListAllPastes(ctx context.Context, limit, offset int, query string) ([]*admin.PasteItem, error) {
+	var rows pgx.Rows
+	var err error
+	if query != "" {
+		pattern := "%" + query + "%"
+		rows, err = r.readPool.Query(ctx, `
+			SELECT slug, title, language, visibility, (password_hash IS NOT NULL), created_at, expires_at, views
+			FROM pastes
+			WHERE title ILIKE $1 OR slug ILIKE $1 OR content ILIKE $1
+			ORDER BY created_at DESC
+			LIMIT $2 OFFSET $3
+		`, pattern, limit, offset)
+	} else {
+		rows, err = r.readPool.Query(ctx, `
+			SELECT slug, title, language, visibility, (password_hash IS NOT NULL), created_at, expires_at, views
+			FROM pastes
+			ORDER BY created_at DESC
+			LIMIT $1 OFFSET $2
+		`, limit, offset)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -182,6 +196,20 @@ func (r *PasteRepo) ListAllPastes(ctx context.Context, limit, offset int) ([]*ad
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+// CountAllPastes returns the total number of pastes matching an optional search
+// query (ILIKE on title, slug, or content).
+func (r *PasteRepo) CountAllPastes(ctx context.Context, query string) (int, error) {
+	var count int
+	var err error
+	if query != "" {
+		pattern := "%" + query + "%"
+		err = r.readPool.QueryRow(ctx, `SELECT COUNT(*) FROM pastes WHERE title ILIKE $1 OR slug ILIKE $1 OR content ILIKE $1`, pattern).Scan(&count)
+	} else {
+		err = r.readPool.QueryRow(ctx, `SELECT COUNT(*) FROM pastes`).Scan(&count)
+	}
+	return count, err
 }
 
 // DeletePasteBySlug deletes a paste by its slug. It returns true if a row was
@@ -420,14 +448,28 @@ func (r *FileRepo) ListPublicRecent(ctx context.Context, limit int) ([]*paste.Fi
 }
 
 // ListAllFiles returns all uploaded files ordered by most recent first.
-// Intended for administrative use only.
-func (r *FileRepo) ListAllFiles(ctx context.Context, limit, offset int) ([]*admin.FileItem, error) {
-	rows, err := r.readPool.Query(ctx, `
-		SELECT slug, filename, mime_type, size_bytes, visibility, (password_hash IS NOT NULL), created_at, expires_at, downloads
-		FROM files
-		ORDER BY created_at DESC
-		LIMIT $1 OFFSET $2
-	`, limit, offset)
+// Intended for administrative use only. When query is non-empty, results are
+// filtered by ILIKE match on filename or slug.
+func (r *FileRepo) ListAllFiles(ctx context.Context, limit, offset int, query string) ([]*admin.FileItem, error) {
+	var rows pgx.Rows
+	var err error
+	if query != "" {
+		pattern := "%" + query + "%"
+		rows, err = r.readPool.Query(ctx, `
+			SELECT slug, filename, mime_type, size_bytes, visibility, (password_hash IS NOT NULL), created_at, expires_at, downloads
+			FROM files
+			WHERE filename ILIKE $1 OR slug ILIKE $1
+			ORDER BY created_at DESC
+			LIMIT $2 OFFSET $3
+		`, pattern, limit, offset)
+	} else {
+		rows, err = r.readPool.Query(ctx, `
+			SELECT slug, filename, mime_type, size_bytes, visibility, (password_hash IS NOT NULL), created_at, expires_at, downloads
+			FROM files
+			ORDER BY created_at DESC
+			LIMIT $1 OFFSET $2
+		`, limit, offset)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -442,6 +484,20 @@ func (r *FileRepo) ListAllFiles(ctx context.Context, limit, offset int) ([]*admi
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+// CountAllFiles returns the total number of files matching an optional search
+// query (ILIKE on filename or slug).
+func (r *FileRepo) CountAllFiles(ctx context.Context, query string) (int, error) {
+	var count int
+	var err error
+	if query != "" {
+		pattern := "%" + query + "%"
+		err = r.readPool.QueryRow(ctx, `SELECT COUNT(*) FROM files WHERE filename ILIKE $1 OR slug ILIKE $1`, pattern).Scan(&count)
+	} else {
+		err = r.readPool.QueryRow(ctx, `SELECT COUNT(*) FROM files`).Scan(&count)
+	}
+	return count, err
 }
 
 // DeleteFileBySlug deletes a file record by its slug. It returns true if a row

@@ -193,6 +193,9 @@ export interface AdminFileItem {
  */
 export interface AdminPasteListResponse {
   pastes: AdminPasteItem[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 /**
@@ -200,6 +203,9 @@ export interface AdminPasteListResponse {
  */
 export interface AdminFileListResponse {
   files: AdminFileItem[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 /**
