@@ -47,8 +47,8 @@ services:
       # is passed through via env_file above, supporting dynamic multi-S3
       # provider prefixes (e.g. S3_BACKBLAZE_BUCKET, S3_CLOUDFLARE_BUCKET).
       PORT: 8080
-      DATABASE_URL: postgres://${POSTGRES_USER:-example_user}:${POSTGRES_PASSWORD:-example_password_change_me}@db:5432/${POSTGRES_DB:-example_db}?sslmode=disable
-      DATABASE_READ_URL: ${DATABASE_READ_URL:-postgres://example_user:example_password_change_me@db:5432/example_db?sslmode=disable}
+      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-example_user}:${POSTGRES_PASSWORD:-example_password_change_me}@db:5432/${POSTGRES_DB:-example_db}?sslmode=disable}
+      DATABASE_READ_URL: ${DATABASE_READ_URL:-}
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-example_redis_password_change_me}@redis:6379/0}
     volumes:
       - uploads_data:/app/uploads
