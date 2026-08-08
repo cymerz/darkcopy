@@ -7,7 +7,9 @@ services:
     container_name: darkcopy-db
     restart: unless-stopped
     ports:
-      - "${DB_HOST_PORT:-5432}:5432"
+      # Bound to localhost by default — the DB should not be internet-facing.
+      # Set DB_BIND=0.0.0.0 only if you explicitly need remote access.
+      - "${DB_BIND:-127.0.0.1}:${DB_HOST_PORT:-5432}:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-example_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-example_password_change_me}
@@ -28,7 +30,9 @@ services:
     container_name: darkcopy-backend
     restart: unless-stopped
     ports:
-      - "${BACKEND_HOST_PORT:-8080}:8080"
+      # Public by default. If running behind a reverse proxy on the host,
+      # set BACKEND_BIND=127.0.0.1 to keep it off the network.
+      - "${BACKEND_BIND:-0.0.0.0}:${BACKEND_HOST_PORT:-8080}:8080"
     depends_on:
       db:
         condition: service_healthy
@@ -45,7 +49,7 @@ services:
       PORT: 8080
       DATABASE_URL: postgres://${POSTGRES_USER:-example_user}:${POSTGRES_PASSWORD:-example_password_change_me}@db:5432/${POSTGRES_DB:-example_db}?sslmode=disable
       DATABASE_READ_URL: ${DATABASE_READ_URL:-postgres://example_user:example_password_change_me@db:5432/example_db?sslmode=disable}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-example_redis_password_change_me}@redis:6379/0}
     volumes:
       - uploads_data:/app/uploads
 
@@ -60,7 +64,8 @@ services:
     container_name: darkcopy-frontend
     restart: unless-stopped
     ports:
-      - "${FRONTEND_HOST_PORT:-3000}:3000"
+      # Public by default. Set FRONTEND_BIND=127.0.0.1 if behind a reverse proxy.
+      - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_HOST_PORT:-3000}:3000"
     depends_on:
       - backend
     environment:
@@ -74,9 +79,13 @@ services:
     container_name: darkcopy-redis
     restart: unless-stopped
     ports:
-      - "${REDIS_HOST_PORT:-6379}:6379"
+      # Bound to localhost by default — Redis must not be internet-facing.
+      - "${REDIS_BIND:-127.0.0.1}:${REDIS_HOST_PORT:-6379}:6379"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-example_redis_password_change_me}
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-example_redis_password_change_me}"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
       interval: 5s
       timeout: 5s
       retries: 5
