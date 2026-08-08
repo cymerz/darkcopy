@@ -1,14 +1,11 @@
 version: "3.8"
 
 services:
-  # 1. PostgreSQL Database Service
   db:
     image: postgres:15-alpine
-    container_name: darkcopy-db
+    container_name: ${DB_CONTAINER_NAME:-darkcopy-db}
     restart: unless-stopped
     ports:
-      # Bound to localhost by default — the DB should not be internet-facing.
-      # Set DB_BIND=0.0.0.0 only if you explicitly need remote access.
       - "${DB_BIND:-127.0.0.1}:${DB_HOST_PORT:-5432}:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-example_user}
@@ -22,16 +19,13 @@ services:
       timeout: 5s
       retries: 5
 
-  # 2. Go API Backend Service
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: darkcopy-backend
+    container_name: ${BACKEND_CONTAINER_NAME:-darkcopy-backend}
     restart: unless-stopped
     ports:
-      # Public by default. If running behind a reverse proxy on the host,
-      # set BACKEND_BIND=127.0.0.1 to keep it off the network.
       - "${BACKEND_BIND:-0.0.0.0}:${BACKEND_HOST_PORT:-8080}:8080"
     depends_on:
       db:
@@ -42,10 +36,6 @@ services:
       - path: .env
         required: false
     environment:
-      # Only vars needing Docker service hostname substitution go here.
-      # All other config (ADMIN_TOKEN, S3_*, S3_PROVIDERS, UPLOAD_*, etc.)
-      # is passed through via env_file above, supporting dynamic multi-S3
-      # provider prefixes (e.g. S3_BACKBLAZE_BUCKET, S3_CLOUDFLARE_BUCKET).
       PORT: 8080
       DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-example_user}:${POSTGRES_PASSWORD:-example_password_change_me}@db:5432/${POSTGRES_DB:-example_db}?sslmode=disable}
       DATABASE_READ_URL: ${DATABASE_READ_URL:-}
@@ -53,7 +43,6 @@ services:
     volumes:
       - uploads_data:/app/uploads
 
-  # 3. Next.js Frontend Service
   frontend:
     build:
       context: ./frontend
@@ -61,25 +50,20 @@ services:
       args:
         NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-}
-    container_name: darkcopy-frontend
+    container_name: ${FRONTEND_CONTAINER_NAME:-darkcopy-frontend}
     restart: unless-stopped
     ports:
-      # Public by default. Set FRONTEND_BIND=127.0.0.1 if behind a reverse proxy.
       - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_HOST_PORT:-3000}:3000"
-    depends_on:
-      - backend
     environment:
       PORT: 3000
-      BACKEND_URL: http://backend:8080 # Next.js rewrites proxy endpoint
+      BACKEND_URL: http://backend:8080
       NODE_ENV: production
 
-  # 4. Redis Service
   redis:
     image: redis:7-alpine
-    container_name: darkcopy-redis
+    container_name: ${REDIS_CONTAINER_NAME:-darkcopy-redis}
     restart: unless-stopped
     ports:
-      # Bound to localhost by default — Redis must not be internet-facing.
       - "${REDIS_BIND:-127.0.0.1}:${REDIS_HOST_PORT:-6379}:6379"
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-example_redis_password_change_me}
@@ -90,10 +74,9 @@ services:
       timeout: 5s
       retries: 5
 
-  # 5. PostgreSQL Backup Service (pg_dump sidecar)
   db-backup:
     image: prodrigestivill/postgres-backup-local:15-alpine
-    container_name: darkcopy-db-backup
+    container_name: ${DB_BACKUP_CONTAINER_NAME:-darkcopy-db-backup}
     restart: unless-stopped
     depends_on:
       db:
@@ -114,8 +97,5 @@ services:
 
 volumes:
   postgres_data:
-    driver: local
   uploads_data:
-    driver: local
   db_backups:
-    driver: local
