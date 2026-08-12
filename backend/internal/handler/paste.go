@@ -467,7 +467,7 @@ func (h *PasteHandler) HandleView(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if !peek {
+	if !peek || !p.BurnAfterRead {
 		// Increment views!
 		_ = h.pasteService.IncrementViews(r.Context(), slug)
 		p.Views++
