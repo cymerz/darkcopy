@@ -8,25 +8,28 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
-	"github.com/gthbn/pastebin/internal/access"
-	"github.com/gthbn/pastebin/internal/admin"
-	"github.com/gthbn/pastebin/internal/db"
-	"github.com/gthbn/pastebin/internal/expiry"
-	"github.com/gthbn/pastebin/internal/file"
-	"github.com/gthbn/pastebin/internal/handler"
-	"github.com/gthbn/pastebin/internal/highlight"
-	"github.com/gthbn/pastebin/internal/paste"
-	"github.com/gthbn/pastebin/internal/quota"
-	"github.com/gthbn/pastebin/internal/report"
-	"github.com/gthbn/pastebin/internal/settings"
-	"github.com/gthbn/pastebin/internal/urlgen"
+	"github.com/cymerz/darkcopy/internal/access"
+	"github.com/cymerz/darkcopy/internal/admin"
+	"github.com/cymerz/darkcopy/internal/backup"
+	"github.com/cymerz/darkcopy/internal/db"
+	"github.com/cymerz/darkcopy/internal/expiry"
+	"github.com/cymerz/darkcopy/internal/file"
+	"github.com/cymerz/darkcopy/internal/handler"
+	"github.com/cymerz/darkcopy/internal/highlight"
+	"github.com/cymerz/darkcopy/internal/paste"
+	"github.com/cymerz/darkcopy/internal/quota"
+	"github.com/cymerz/darkcopy/internal/report"
+	"github.com/cymerz/darkcopy/internal/settings"
+	"github.com/cymerz/darkcopy/internal/urlgen"
 )
 
 // accessControllerAdapter adapts *access.Controller to the handler.AccessController interface.
@@ -84,15 +87,31 @@ func main() {
 	defer cancel()
 
 	// Initialize database connection.
-	pool, err := db.Connect(ctx, databaseURL)
+	writePool, err := db.Connect(ctx, databaseURL)
 	if err != nil {
-		logger.Error("failed to connect to database", "error", err)
+		logger.Error("failed to connect to write database", "error", err)
 		os.Exit(1)
 	}
-	defer pool.Close()
+	defer writePool.Close()
 
-	// Run database migrations.
-	if err := db.RunMigrations(ctx, pool); err != nil {
+	// Initialize read connection pool. If DATABASE_READ_URL matches DATABASE_URL, or is empty, reuse writePool.
+	databaseReadURL := envOrDefault("DATABASE_READ_URL", databaseURL)
+	var readPool *pgxpool.Pool
+	if databaseReadURL == databaseURL {
+		readPool = writePool
+		logger.Info("using single database pool for both reads and writes")
+	} else {
+		logger.Info("connecting to read-only database replica")
+		readPool, err = db.Connect(ctx, databaseReadURL)
+		if err != nil {
+			logger.Error("failed to connect to read database", "error", err)
+			os.Exit(1)
+		}
+		defer readPool.Close()
+	}
+
+	// Run database migrations on write pool.
+	if err := db.RunMigrations(ctx, writePool); err != nil {
 		logger.Error("failed to run migrations", "error", err)
 		os.Exit(1)
 	}
@@ -119,16 +138,16 @@ func main() {
 	}
 
 	// Initialize repositories.
-	pasteRepo := db.NewPasteRepo(pool)
-	fileRepo := db.NewFileRepo(pool)
-	expiryStore := db.NewExpiryStore(pool)
+	pasteRepo := db.NewPasteRepo(writePool, readPool)
+	fileRepo := db.NewFileRepo(writePool, readPool)
+	expiryStore := db.NewExpiryStore(writePool, readPool)
 	if rdb != nil {
 		pasteRepo = pasteRepo.WithRedis(rdb)
 		fileRepo = fileRepo.WithRedis(rdb)
 		expiryStore = expiryStore.WithRedis(rdb)
 	}
-	settingsRepo := db.NewSettingsRepo(pool)
-	reportRepo := db.NewReportRepo(pool)
+	settingsRepo := db.NewSettingsRepo(writePool, readPool)
+	reportRepo := db.NewReportRepo(writePool, readPool)
 
 	// Initialize runtime settings: start from defaults, then load any persisted
 	// overrides from the database.
@@ -204,7 +223,7 @@ func main() {
 	highlighter := highlight.NewChromaHighlighter("")
 
 	// Create a SlugExistsFunc that queries both pastes and files tables.
-	slugExistsFunc := db.SlugExists(pool)
+	slugExistsFunc := db.SlugExists(readPool)
 	urlGen := urlgen.NewGenerator(slugExistsFunc)
 
 	// Initialize file storage (S3 with Local fallback).
@@ -312,7 +331,7 @@ func main() {
 
 	if rdb != nil {
 		// Flush views/downloads from Redis to PostgreSQL every 10 seconds
-		db.StartFlusher(ctx, rdb, pool, 10*time.Second, logger)
+		db.StartFlusher(ctx, rdb, writePool, 10*time.Second, logger)
 		logger.Info("started views/downloads flusher background task")
 	}
 
@@ -332,7 +351,32 @@ func main() {
 	fileHandler.SetSettings(settingsProvider)
 	fileHandler.SetQuota(dailyQuota)
 	fileHandler.SetSizeQuota(dailySizeQuota)
+
+	// Dynamic upload memory limits (in bytes). Per-request and total cap are configured
+	// via environment variables in Megabytes and converted to bytes here.
+	uploadMaxMemPerReqBytes := int64(envOrDefaultInt("UPLOAD_MAX_MEM_MB", 32)) * 1024 * 1024
+	uploadMaxMemTotalBytes := int64(envOrDefaultInt("UPLOAD_MAX_MEM_TOTAL_MB", 64)) * 1024 * 1024
+	fileHandler.SetMaxMultipartMemory(uploadMaxMemPerReqBytes, uploadMaxMemTotalBytes)
+	logger.Info("configured dynamic upload memory limits",
+		"per_request_mb", uploadMaxMemPerReqBytes/(1024*1024),
+		"total_cap_mb", uploadMaxMemTotalBytes/(1024*1024),
+	)
 	adminHandler := handler.NewAdminHandler(adminSvc, settingsMgr, reportSvc, adminToken)
+	
+	// Initialize backup service.
+	backupDir := envOrDefault("BACKUP_DIR", "./backups")
+	backupRepo := db.NewBackupRepo(writePool, readPool)
+	if rdb != nil {
+		backupRepo = backupRepo.WithRedis(rdb)
+	}
+	backupSvc, bErr := backup.NewService(backupDir, backupRepo, backupRepo)
+	if bErr != nil {
+		logger.Warn("failed to initialize backup service", "error", bErr)
+	} else {
+		adminHandler.WithBackupService(backupSvc)
+		logger.Info("initialized backup service", "directory", backupDir)
+	}
+
 	reportHandler := handler.NewReportHandler(reportSvc)
 	// Limit reports to 20 per IP per day to curb spam.
 	reportHandler.SetQuota(dailyQuota, 20)
@@ -412,6 +456,17 @@ func main() {
 func envOrDefault(key, defaultVal string) string {
 	if val := os.Getenv(key); val != "" {
 		return val
+	}
+	return defaultVal
+}
+
+// envOrDefaultInt returns the parsed int value of the environment variable named
+// by key, or defaultVal if the variable is not set, empty, or cannot be parsed.
+func envOrDefaultInt(key string, defaultVal int) int {
+	if val := os.Getenv(key); val != "" {
+		if n, err := strconv.Atoi(val); err == nil {
+			return n
+		}
 	}
 	return defaultVal
 }

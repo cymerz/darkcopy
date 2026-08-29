@@ -10,11 +10,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/gthbn/pastebin/internal/file"
-	"github.com/gthbn/pastebin/internal/paste"
+	"github.com/cymerz/darkcopy/internal/file"
+	"github.com/cymerz/darkcopy/internal/paste"
 )
 
 // FileService defines the interface for file operations used by the handler.
@@ -26,10 +27,11 @@ type FileService interface {
 	ListPublicRecent(ctx context.Context, limit int) ([]*paste.FileSummary, error)
 	PresignDownloadURL(ctx context.Context, slug string, inline bool) (string, error)
 	IncrementDownloads(ctx context.Context, slug string) error
+	Search(ctx context.Context, query string, limit int) ([]*paste.FileSummary, error)
 
 	// Direct S3 upload methods
 	SupportsUploadPresigning() bool
-	PresignUploadURL(ctx context.Context, filename, contentType string) (slug, storageKey, uploadURL string, err error)
+	PresignUploadURL(ctx context.Context, filename, contentType string, size int64) (slug, storageKey, uploadURL string, err error)
 	RegisterUploadedFile(ctx context.Context, req paste.RegisterFileRequest) (*paste.FileRecord, error)
 }
 
@@ -43,6 +45,14 @@ type FileHandler struct {
 	quota DailyQuota
 	// sizeQuota enforces global/per-IP daily upload size limits; may be nil.
 	sizeQuota DailySizeQuota
+
+	// maxMultipartMem is the max RAM in bytes allowed for parsing a single multipart form.
+	// Larger portions of the upload are automatically written to the VPS disk temp directory.
+	maxMultipartMem int64
+	// maxMemTotalUsage is the global RAM cap in bytes for all concurrent uploads combined.
+	maxMemTotalUsage int64
+	// activeUploads tracks the count of currently parsing multipart upload requests (thread-safe).
+	activeUploads int64
 }
 
 // NewFileHandler creates a new FileHandler with the given dependencies.
@@ -51,6 +61,18 @@ func NewFileHandler(fs FileService, ac AccessController) *FileHandler {
 		fileService:      fs,
 		accessController: ac,
 	}
+}
+
+// SetMaxMultipartMemory configures the dynamic multipart memory limits (in bytes) for uploads.
+func (h *FileHandler) SetMaxMultipartMemory(perRequestBytes, totalBytes int64) {
+	if perRequestBytes <= 0 {
+		perRequestBytes = 32 * 1024 * 1024
+	}
+	if totalBytes <= 0 {
+		totalBytes = 64 * 1024 * 1024
+	}
+	h.maxMultipartMem = perRequestBytes
+	h.maxMemTotalUsage = totalBytes
 }
 
 // SetSettings installs a settings provider used for dynamic expiry options.
@@ -62,15 +84,13 @@ func (h *FileHandler) SetQuota(q DailyQuota) { h.quota = q }
 // SetSizeQuota installs a daily size quota enforcer for file uploads.
 func (h *FileHandler) SetSizeQuota(q DailySizeQuota) { h.sizeQuota = q }
 
-// maxUploadMemory is the maximum memory used for parsing multipart forms (100 MB).
-const maxUploadMemory = 100 << 20
-
 // RegisterFileRoutes registers all file-related routes on the given chi router.
 func RegisterFileRoutes(r chi.Router, h *FileHandler) {
 	r.Get("/upload", h.ShowUploadForm)
 	r.Post("/upload", h.HandleUpload)
 	r.Post("/upload/presign", h.HandlePresignUpload)
 	r.Post("/upload/register", h.HandleRegisterUploadedFile)
+	r.Get("/f/search", h.HandleSearchFiles)
 	r.Get("/f/{slug}", h.GetFile)
 	r.Head("/f/{slug}", h.GetFile)
 	r.Get("/f/{slug}/direct", h.DirectDownload)
@@ -130,6 +150,31 @@ func (h *FileHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enforce direct upload policy for API/CLI when configured by administrator.
+	if h.settings != nil && h.settings.Get().EnforceDirectUploadAPI && h.fileService.SupportsUploadPresigning() {
+		writeJSON(w, http.StatusBadRequest, errorResponse{
+			Error:  "Direct server uploads are disabled by admin policy. Please use the pre-signed upload API.",
+			Code:   "DIRECT_UPLOAD_REQUIRED",
+			Status: http.StatusBadRequest,
+		})
+		return
+	}
+
+	// Enforce global daily upload count limit when configured.
+	if h.quota != nil && h.settings != nil {
+		globalLimit := h.settings.Get().MaxDailyUploads
+		if globalLimit > 0 {
+			if allowed, _ := h.quota.Allow("global_uploads", globalLimit); !allowed {
+				writeJSON(w, http.StatusTooManyRequests, errorResponse{
+					Error:  "Global daily upload limit reached. Try again tomorrow.",
+					Code:   "GLOBAL_DAILY_LIMIT_REACHED",
+					Status: http.StatusTooManyRequests,
+				})
+				return
+			}
+		}
+	}
+
 	// Enforce per-IP daily upload limit when configured.
 	if h.quota != nil && h.settings != nil {
 		limit := h.settings.Get().MaxFileUploadsPerDayPerIP
@@ -147,10 +192,33 @@ func (h *FileHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Apply max body size cap before parsing multipart form.
-	const maxBodySize = maxUploadMemory + file.MaxFileSize
+	// We use the configured file size cap from settings + 10MB headroom for form fields, with a hard 100MB minimum.
+	fileSizeCap := int64(file.MaxFileSize)
+	if h.settings != nil {
+		if s := h.settings.Get().MaxFileSizeBytes; s > 0 {
+			fileSizeCap = s
+		}
+	}
+	const headroom = 10 << 20 // 10MB for multipart overhead and form fields
+	maxBodySize := fileSizeCap + headroom
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
 
-	if err := r.ParseMultipartForm(maxUploadMemory); err != nil {
+	// Dynamic memory allocation: scale down per-request RAM based on concurrent upload count.
+	// This keeps the total RAM across all uploads bounded by maxMemTotalUsage while using
+	// up to maxMultipartMem for a single idle request.
+	activeCount := atomic.AddInt64(&h.activeUploads, 1)
+	defer atomic.AddInt64(&h.activeUploads, -1)
+
+	allocatedBytes := h.maxMemTotalUsage / activeCount
+	if allocatedBytes > h.maxMultipartMem {
+		allocatedBytes = h.maxMultipartMem
+	}
+	const minMemoryBytes int64 = 1 * 1024 * 1024 // 1 MB minimum to prevent thrashing
+	if allocatedBytes < minMemoryBytes {
+		allocatedBytes = minMemoryBytes
+	}
+
+	if err := r.ParseMultipartForm(allocatedBytes); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{
 			Error:  "Failed to process upload form",
 			Code:   "INVALID_FORM",
@@ -158,6 +226,12 @@ func (h *FileHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	// Ensure temporary files in /tmp (from ParseMultipartForm disk overflow) are cleaned up.
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
 
 	// Extract file from form field "file".
 	f, header, err := r.FormFile("file")
@@ -244,10 +318,18 @@ func (h *FileHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if wantsPlain(r) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(getBaseURL(r) + "/f/" + record.Slug + "\n"))
+		return
+	}
+
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"success":  true,
 		"slug":     record.Slug,
 		"url":      fmt.Sprintf("/f/%s", record.Slug),
+		"full_url": getBaseURL(r) + "/f/" + record.Slug,
 		"md5_hash": record.MD5Hash,
 	})
 }
@@ -582,6 +664,16 @@ func (h *FileHandler) HandlePresignUpload(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Enforce direct upload enabled setting
+	if h.settings != nil && !h.settings.Get().UseDirectUpload {
+		writeJSON(w, http.StatusForbidden, errorResponse{
+			Error:  "Direct S3 upload is currently disabled.",
+			Code:   "DIRECT_UPLOAD_DISABLED",
+			Status: http.StatusForbidden,
+		})
+		return
+	}
+
 	var req presignUploadRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{
@@ -607,6 +699,21 @@ func (h *FileHandler) HandlePresignUpload(w http.ResponseWriter, r *http.Request
 			Status: http.StatusRequestEntityTooLarge,
 		})
 		return
+	}
+
+	// Enforce global daily upload count limit when configured.
+	if h.quota != nil && h.settings != nil {
+		globalLimit := h.settings.Get().MaxDailyUploads
+		if globalLimit > 0 {
+			if allowed, _ := h.quota.Allow("global_uploads", globalLimit); !allowed {
+				writeJSON(w, http.StatusTooManyRequests, errorResponse{
+					Error:  "Global daily upload limit reached. Try again tomorrow.",
+					Code:   "GLOBAL_DAILY_LIMIT_REACHED",
+					Status: http.StatusTooManyRequests,
+				})
+				return
+			}
+		}
 	}
 
 	// Enforce per-IP daily upload limit when configured.
@@ -662,7 +769,7 @@ func (h *FileHandler) HandlePresignUpload(w http.ResponseWriter, r *http.Request
 		mimeType = "application/octet-stream"
 	}
 
-	slug, storageKey, uploadURL, err := h.fileService.PresignUploadURL(r.Context(), req.Filename, mimeType)
+	slug, storageKey, uploadURL, err := h.fileService.PresignUploadURL(r.Context(), req.Filename, mimeType, req.SizeBytes)
 	if err != nil {
 		handleFileServiceError(w, err)
 		return
@@ -695,6 +802,16 @@ func (h *FileHandler) HandleRegisterUploadedFile(w http.ResponseWriter, r *http.
 		writeJSON(w, http.StatusForbidden, errorResponse{
 			Error:  "Unggah file sedang dinonaktifkan sementara oleh administrator.",
 			Code:   "UPLOADS_DISABLED",
+			Status: http.StatusForbidden,
+		})
+		return
+	}
+
+	// Enforce direct upload enabled setting
+	if h.settings != nil && !h.settings.Get().UseDirectUpload {
+		writeJSON(w, http.StatusForbidden, errorResponse{
+			Error:  "Direct S3 upload is currently disabled.",
+			Code:   "DIRECT_UPLOAD_DISABLED",
 			Status: http.StatusForbidden,
 		})
 		return
@@ -750,9 +867,10 @@ func (h *FileHandler) HandleRegisterUploadedFile(w http.ResponseWriter, r *http.
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"success": true,
-		"slug":    record.Slug,
-		"url":     fmt.Sprintf("/f/%s", record.Slug),
+		"success":  true,
+		"slug":     record.Slug,
+		"url":      fmt.Sprintf("/f/%s", record.Slug),
+		"full_url": getBaseURL(r) + "/f/" + record.Slug,
 	})
 }
 
@@ -779,3 +897,28 @@ func formatBytes(b int64) string {
 	}
 	return fmt.Sprintf("%d bytes", b)
 }
+
+// HandleSearchFiles searches for public files containing the query string in their filename.
+func (h *FileHandler) HandleSearchFiles(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		writeJSON(w, http.StatusOK, []*paste.FileSummary{})
+		return
+	}
+
+	limit := 20
+	if lStr := r.URL.Query().Get("limit"); lStr != "" {
+		if l, err := strconv.Atoi(lStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+
+	results, err := h.fileService.Search(r.Context(), query, limit)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Search failed", "INTERNAL_ERROR")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, results)
+}
+

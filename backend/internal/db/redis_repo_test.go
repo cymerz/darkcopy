@@ -9,7 +9,7 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
-	"github.com/gthbn/pastebin/internal/paste"
+	"github.com/cymerz/darkcopy/internal/paste"
 )
 
 func TestRedisCachingAndBuffering(t *testing.T) {
@@ -25,8 +25,8 @@ func TestRedisCachingAndBuffering(t *testing.T) {
 	defer rdb.Close()
 
 	ctx := context.Background()
-	pasteRepo := NewPasteRepo(nil).WithRedis(rdb)
-	fileRepo := NewFileRepo(nil).WithRedis(rdb)
+	pasteRepo := NewPasteRepo(nil, nil).WithRedis(rdb)
+	fileRepo := NewFileRepo(nil, nil).WithRedis(rdb)
 
 	// Test 1: GetBySlug from cache
 	dummyPaste := &paste.Paste{

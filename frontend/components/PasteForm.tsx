@@ -1,10 +1,12 @@
 'use client';
 
-import { useRef, useState, useSyncExternalStore } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRef, useState, useSyncExternalStore, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createPaste } from '@/lib/api';
 import { APIError } from '@/lib/types';
+import { CopyButton } from '@/components/CopyButton';
 import type { ExpiryOption, Language } from '@/lib/types';
+import { generateEncryptionKey, encryptText } from '@/lib/crypto';
 
 interface PasteFormProps {
   languages: Language[];
@@ -47,6 +49,8 @@ export function PasteForm({ languages, expiryOptions, disabled }: PasteFormProps
   const [visibility, setVisibility] = useState<Visibility>('public');
   const [password, setPassword] = useState('');
   const [customSlug, setCustomSlug] = useState('');
+  const [burnAfterRead, setBurnAfterRead] = useState(false);
+  const [isEncrypted, setIsEncrypted] = useState(false);
 
   const origin = useSyncExternalStore(
     () => () => {},
@@ -56,8 +60,25 @@ export function PasteForm({ languages, expiryOptions, disabled }: PasteFormProps
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [createdURL, setCreatedURL] = useState<string | null>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
   const isFormDisabled = isSubmitting || disabled;
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams && searchParams.get('fork') === '1') {
+      const raw = sessionStorage.getItem('fork_data');
+      if (raw) {
+        try {
+          const data = JSON.parse(raw) as { title: string; content: string; language: string };
+          if (data.content) setContent(data.content);
+          if (data.title) setTitle(data.title);
+          if (data.language) setLanguage(data.language);
+        } catch {}
+        sessionStorage.removeItem('fork_data');
+      }
+    }
+  }, [searchParams]);
 
   const lineCount = Math.max(1, content.split('\n').length);
   const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1);
@@ -73,24 +94,72 @@ export function PasteForm({ languages, expiryOptions, disabled }: PasteFormProps
     setIsSubmitting(true);
 
     try {
+      let finalContent = content;
+      let encryptionKey = '';
+
+      if (isEncrypted) {
+        encryptionKey = await generateEncryptionKey();
+        finalContent = await encryptText(content, encryptionKey);
+      }
+
       const formData = new URLSearchParams();
-      formData.append('content', content);
+      formData.append('content', finalContent);
       formData.append('title', title);
       formData.append('language', language);
       formData.append('expires_in', expiresIn);
       formData.append('visibility', visibility);
       if (customSlug.trim()) formData.append('custom_slug', customSlug.trim().toLowerCase());
       if (visibility === 'password_protected') formData.append('password', password);
+      if (burnAfterRead) formData.append('burn_after_read', 'true');
+      if (isEncrypted) formData.append('is_encrypted', 'true');
 
       const result = await createPaste(formData);
       const slug = resolveSlug(result);
       if (!slug) { setError('Failed to create paste. Please try again.'); setIsSubmitting(false); return; }
-      router.push(`/${slug}`);
+
+      // Burn-after-read: show URL on this page, never redirect to view
+      if (burnAfterRead) {
+        const base = typeof window !== 'undefined' ? window.location.origin : '';
+        let url = result.url ? `${base}${result.url}` : `${base}/${slug}`;
+        if (isEncrypted) {
+          url += `#key=${encryptionKey}`;
+        }
+        setCreatedURL(url);
+        setIsSubmitting(false);
+        return;
+      }
+
+      const redirectPath = isEncrypted ? `/${slug}#key=${encryptionKey}` : `/${slug}`;
+      router.push(redirectPath);
     } catch (err) {
       setError(err instanceof APIError ? err.message : 'An error occurred while creating the paste.');
       setIsSubmitting(false);
     }
   };
+
+  if (createdURL) {
+    return (
+      <div className="space-y-6">
+        <div className="border-2 border-secondary bg-secondary/10 px-4 py-3">
+          <p className="text-sm font-mono text-secondary">✓ BURN-AFTER-READ PASTE CREATED</p>
+          <p className="text-xs font-mono text-on-surface-variant mt-1">Share the link once. The paste deletes after the first visit.</p>
+        </div>
+        <div className="border-2 border-surface-variant bg-surface-container-lowest p-4">
+          <label className="text-label-caps text-secondary block mb-2">PASTE_URL</label>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center">
+            <input type="text" readOnly value={createdURL}
+              onFocus={(e) => e.currentTarget.select()}
+              className="flex-1 min-h-[44px] border-2 border-surface-variant bg-terminal-bg px-3 py-2.5 text-sm font-mono text-secondary focus:outline-none" />
+            <CopyButton content={createdURL} />
+          </div>
+        </div>
+        <button type="button" onClick={() => setCreatedURL(null)}
+          className="inline-flex min-h-[44px] items-center justify-center gap-2 border-2 border-secondary text-secondary px-6 py-2.5 font-mono font-bold uppercase tracking-wider transition-all duration-200 hover:bg-secondary hover:text-black active:translate-y-[2px]">
+          {'>'} CREATE ANOTHER
+        </button>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6" noValidate>
@@ -210,6 +279,35 @@ export function PasteForm({ languages, expiryOptions, disabled }: PasteFormProps
           ))}
         </div>
       </fieldset>
+
+      {/* Options */}
+      <div className="space-y-2">
+        <span className="text-label-caps text-secondary block">OPTIONS</span>
+        <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:gap-3">
+          <label className="flex flex-1 min-h-[44px] cursor-pointer items-center gap-3 border-2 border-surface-variant bg-surface-container-lowest px-4 py-2.5 text-sm font-mono text-on-surface transition-colors hover:border-secondary has-[:checked]:border-secondary has-[:checked]:bg-secondary/10">
+            <input
+              type="checkbox"
+              name="burn_after_read"
+              checked={burnAfterRead}
+              onChange={(e) => setBurnAfterRead(e.target.checked)}
+              disabled={isFormDisabled}
+              className="appearance-none w-4 h-4 border-2 border-surface-variant rounded-sm checked:border-secondary checked:shadow-[inset_0_0_0_2px_#4cd7f6] checked:bg-secondary transition-all"
+            />
+            BURN AFTER READING
+          </label>
+          <label className="flex flex-1 min-h-[44px] cursor-pointer items-center gap-3 border-2 border-surface-variant bg-surface-container-lowest px-4 py-2.5 text-sm font-mono text-on-surface transition-colors hover:border-secondary has-[:checked]:border-secondary has-[:checked]:bg-secondary/10">
+            <input
+              type="checkbox"
+              name="is_encrypted"
+              checked={isEncrypted}
+              onChange={(e) => setIsEncrypted(e.target.checked)}
+              disabled={isFormDisabled}
+              className="appearance-none w-4 h-4 border-2 border-surface-variant rounded-sm checked:border-secondary checked:shadow-[inset_0_0_0_2px_#4cd7f6] checked:bg-secondary transition-all"
+            />
+            ENCRYPT PASTE (E2EE)
+          </label>
+        </div>
+      </div>
 
       {/* Conditional password */}
       {visibility === 'password_protected' && (

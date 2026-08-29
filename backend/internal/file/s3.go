@@ -138,16 +138,19 @@ func (s *S3Storage) Delete(ctx context.Context, storageKey string) error {
 }
 
 // Head performs a lightweight existence check for the given storage key
-// using S3 HeadObject. Returns nil if the object exists, an error otherwise.
-func (s *S3Storage) Head(ctx context.Context, storageKey string) error {
-	_, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
+// using S3 HeadObject. Returns the object size in bytes if it exists.
+func (s *S3Storage) Head(ctx context.Context, storageKey string) (int64, error) {
+	resp, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(storageKey),
 	})
 	if err != nil {
-		return fmt.Errorf("s3 storage: head object %s: %w", storageKey, err)
+		return 0, fmt.Errorf("s3 storage: head object %s: %w", storageKey, err)
 	}
-	return nil
+	if resp.ContentLength != nil {
+		return *resp.ContentLength, nil
+	}
+	return 0, nil
 }
 
 	// PresignURL generates a secure, temporary pre-signed URL for the given storage key,
@@ -253,12 +256,14 @@ func (s *S3Storage) Head(ctx context.Context, storageKey string) error {
 }
 
 // PresignUploadURL generates a secure, temporary pre-signed URL to upload an object using PUT.
-func (s *S3Storage) PresignUploadURL(ctx context.Context, storageKey string, expires time.Duration, contentType string) (string, error) {
+// The Content-Length is signed into the URL so S3 enforces the exact declared size.
+func (s *S3Storage) PresignUploadURL(ctx context.Context, storageKey string, expires time.Duration, contentType string, size int64) (string, error) {
 	presignClient := s3.NewPresignClient(s.client)
 	input := &s3.PutObjectInput{
-		Bucket:      aws.String(s.bucket),
-		Key:         aws.String(storageKey),
-		ContentType: aws.String(contentType),
+		Bucket:         aws.String(s.bucket),
+		Key:            aws.String(storageKey),
+		ContentType:    aws.String(contentType),
+		ContentLength:  aws.Int64(size),
 	}
 
 	// SECURITY: Force attachment disposition on S3 object for dangerous MIME types.

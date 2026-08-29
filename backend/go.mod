@@ -1,4 +1,4 @@
-module github.com/gthbn/pastebin
+module github.com/cymerz/darkcopy
 
 go 1.26
 

@@ -82,6 +82,8 @@ export interface PasteViewResponse {
   expires_at: string | null;
   remaining_seconds: number | null;
   views: number;
+  is_encrypted: boolean;
+  burn_after_read: boolean;
 }
 
 /**
@@ -191,6 +193,9 @@ export interface AdminFileItem {
  */
 export interface AdminPasteListResponse {
   pastes: AdminPasteItem[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 /**
@@ -198,6 +203,9 @@ export interface AdminPasteListResponse {
  */
 export interface AdminFileListResponse {
   files: AdminFileItem[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 /**
@@ -235,11 +243,13 @@ export interface AdminSettings {
   file_expiry_options: AdminExpiryOption[];
   max_pastes_per_day_per_ip: number;
   max_file_uploads_per_day_per_ip: number;
+  max_daily_uploads?: number;
   disable_new_pastes?: boolean;
   disable_file_uploads?: boolean;
   max_daily_upload_bytes?: number;
   max_daily_upload_bytes_per_ip?: number;
   use_direct_upload?: boolean;
+  enforce_direct_upload_api?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -279,3 +289,27 @@ export const REPORT_REASONS: { value: string; label: string }[] = [
   { value: 'personal_info', label: 'Personal Information' },
   { value: 'other', label: 'Other' },
 ];
+
+// ---------------------------------------------------------------------------
+// Admin Backup types
+// ---------------------------------------------------------------------------
+
+export interface AdminBackupItem {
+  filename: string;
+  size_bytes: number;
+  created_at: string;
+  format: 'json' | 'sql' | 'sql.gz';
+}
+
+export interface AdminBackupListResponse {
+  backups: AdminBackupItem[];
+}
+
+export interface AdminRestoreResult {
+  success: boolean;
+  restored_pastes: number;
+  restored_files: number;
+  restored_reports: number;
+  settings_updated: boolean;
+}
+

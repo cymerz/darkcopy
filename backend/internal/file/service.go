@@ -18,9 +18,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/gthbn/pastebin/internal/access"
-	"github.com/gthbn/pastebin/internal/paste"
-	"github.com/gthbn/pastebin/internal/urlgen"
+	"github.com/cymerz/darkcopy/internal/access"
+	"github.com/cymerz/darkcopy/internal/paste"
+	"github.com/cymerz/darkcopy/internal/urlgen"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -76,6 +76,7 @@ type FileRepository interface {
 	GetBySlug(ctx context.Context, slug string) (*paste.FileRecord, error)
 	ListPublicRecent(ctx context.Context, limit int) ([]*paste.FileSummary, error)
 	IncrementDownloads(ctx context.Context, slug string) error
+	SearchFiles(ctx context.Context, query string, limit int) ([]*paste.FileSummary, error)
 }
 
 
@@ -84,12 +85,18 @@ type FileStorage interface {
 	Save(ctx context.Context, storageKey string, reader io.Reader) error
 	Open(ctx context.Context, storageKey string) (io.ReadCloser, error)
 	Delete(ctx context.Context, storageKey string) error
-	Head(ctx context.Context, storageKey string) error
+	Head(ctx context.Context, storageKey string) (size int64, err error)
+}
+
+// StorageProviderTracker is an optional interface storage backends can implement
+// to report the name of the provider holding a specific storage key.
+type StorageProviderTracker interface {
+	GetProviderName(storageKey string) string
 }
 
 // UploadPresigner defines the interface for generating presigned upload URLs.
 type UploadPresigner interface {
-	PresignUploadURL(ctx context.Context, storageKey string, expires time.Duration, contentType string) (string, error)
+	PresignUploadURL(ctx context.Context, storageKey string, expires time.Duration, contentType string, size int64) (string, error)
 }
 
 // Service is the concrete implementation of FileService.
@@ -217,19 +224,25 @@ func (s *Service) Upload(ctx context.Context, req paste.UploadFileRequest) (*pas
 		expiresAt = &t
 	}
 
+	var providerName string
+	if tracker, ok := s.storage.(StorageProviderTracker); ok {
+		providerName = tracker.GetProviderName(storageKey)
+	}
+
 	record := &paste.FileRecord{
-		ID:           uuid.New(),
-		Slug:         slug,
-		Filename:     filename,
-		MIMEType:     req.MIMEType,
-		SizeBytes:    req.Size,
-		StorageKey:   storageKey,
-		Visibility:   req.Visibility,
-		PasswordHash: passwordHash,
-		ExpiresAt:    expiresAt,
-		CreatedAt:    now,
-		MD5Hash:      md5Hash,
-		SHA256Hash:   sha256Hash,
+		ID:              uuid.New(),
+		Slug:            slug,
+		Filename:        filename,
+		MIMEType:        req.MIMEType,
+		SizeBytes:       req.Size,
+		StorageKey:      storageKey,
+		Visibility:      req.Visibility,
+		PasswordHash:    passwordHash,
+		ExpiresAt:       expiresAt,
+		CreatedAt:       now,
+		MD5Hash:         md5Hash,
+		SHA256Hash:      sha256Hash,
+		StorageProvider: providerName,
 	}
 
 	if err := s.repo.InsertFile(ctx, record); err != nil {
@@ -257,6 +270,14 @@ func (s *Service) GetBySlug(ctx context.Context, slug string) (*paste.FileRecord
 // ListPublicRecent returns the most recent public files up to the given limit.
 func (s *Service) ListPublicRecent(ctx context.Context, limit int) ([]*paste.FileSummary, error) {
 	return s.repo.ListPublicRecent(ctx, limit)
+}
+
+// Search searches for public files containing the query string in their filename.
+func (s *Service) Search(ctx context.Context, query string, limit int) ([]*paste.FileSummary, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	return s.repo.SearchFiles(ctx, query, limit)
 }
 
 // ServeFile retrieves a file by slug and streams it to the HTTP response writer
@@ -389,6 +410,12 @@ type Presigner interface {
 	PresignURL(ctx context.Context, storageKey string, expires time.Duration, inline bool) (string, error)
 }
 
+// ProviderPresigner is an optional interface for storage backends to support
+// generating presigned download URLs with a specific target provider name from the database.
+type ProviderPresigner interface {
+	PresignURLWithProvider(ctx context.Context, storageKey string, provider string, expires time.Duration, inline bool) (string, error)
+}
+
 // PresignDownloadURL generates a temporary presigned URL for direct S3 download.
 // Returns ErrPresignUnsupported if the storage backend does not support presigning.
 func (s *Service) PresignDownloadURL(ctx context.Context, slug string, inline bool) (string, error) {
@@ -397,6 +424,12 @@ func (s *Service) PresignDownloadURL(ctx context.Context, slug string, inline bo
 		return "", err
 	}
 
+	// Try ProviderPresigner first if it's implemented (e.g. MultiS3Storage)
+	if p, ok := s.storage.(ProviderPresigner); ok {
+		return p.PresignURLWithProvider(ctx, record.StorageKey, record.StorageProvider, DefaultPresignExpiry, inline)
+	}
+
+	// Fallback to simple Presigner
 	presigner, ok := s.storage.(Presigner)
 	if !ok {
 		return "", ErrPresignUnsupported
@@ -439,10 +472,15 @@ func (s *Service) SupportsUploadPresigning() bool {
 
 // PresignUploadURL generates a unique slug, constructs a storage key, and returns
 // a pre-signed S3 upload URL for PUT request.
-func (s *Service) PresignUploadURL(ctx context.Context, filename, contentType string) (slug, storageKey, uploadURL string, err error) {
+func (s *Service) PresignUploadURL(ctx context.Context, filename, contentType string, size int64) (slug, storageKey, uploadURL string, err error) {
 	// SECURITY: Block dangerous file types (HTML, SVG, JS, etc.) — use paste feature instead.
 	if dangerousMIMETypes[strings.ToLower(strings.TrimSpace(contentType))] {
 		return "", "", "", ErrDangerousFileType
+	}
+
+	// Enforce max size before signing
+	if size <= 0 || size > s.maxFileSize() {
+		return "", "", "", ErrFileTooLarge
 	}
 
 	presigner, ok := s.storage.(UploadPresigner)
@@ -459,7 +497,7 @@ func (s *Service) PresignUploadURL(ctx context.Context, filename, contentType st
 	}
 
 	storageKey = fmt.Sprintf("uploads/%s/%s", slug, sanitizedFilename)
-	uploadURL, err = presigner.PresignUploadURL(ctx, storageKey, DefaultPresignExpiry, contentType)
+	uploadURL, err = presigner.PresignUploadURL(ctx, storageKey, DefaultPresignExpiry, contentType, size)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -489,9 +527,13 @@ func (s *Service) RegisterUploadedFile(ctx context.Context, req paste.RegisterFi
 	// to prevent clients from registering arbitrary keys or accessing other users' files.
 	expectedStorageKey := fmt.Sprintf("uploads/%s/%s", req.Slug, filename)
 
-	// 1. Verify file exists in storage.
-	if err := s.storage.Head(ctx, expectedStorageKey); err != nil {
+	// 1. Verify file exists in storage and actual size matches declared size.
+	actualSize, err := s.storage.Head(ctx, expectedStorageKey)
+	if err != nil {
 		return nil, fmt.Errorf("file not found in storage: %w", err)
+	}
+	if actualSize != req.Size {
+		return nil, fmt.Errorf("declared size %d does not match actual size %d", req.Size, actualSize)
 	}
 
 	// 2. Validate password is required for password_protected visibility.
@@ -526,19 +568,25 @@ func (s *Service) RegisterUploadedFile(ctx context.Context, req paste.RegisterFi
 		expiresAt = &t
 	}
 
+	var providerName string
+	if tracker, ok := s.storage.(StorageProviderTracker); ok {
+		providerName = tracker.GetProviderName(expectedStorageKey)
+	}
+
 	record := &paste.FileRecord{
-		ID:           uuid.New(),
-		Slug:         req.Slug,
-		Filename:     filename,
-		MIMEType:     req.MIMEType,
-		SizeBytes:    req.Size,
-		StorageKey:   expectedStorageKey,
-		Visibility:   req.Visibility,
-		PasswordHash: passwordHash,
-		ExpiresAt:    expiresAt,
-		CreatedAt:    now,
-		MD5Hash:      req.MD5Hash,
-		SHA256Hash:   req.SHA256Hash,
+		ID:              uuid.New(),
+		Slug:            req.Slug,
+		Filename:        filename,
+		MIMEType:        req.MIMEType,
+		SizeBytes:       req.Size,
+		StorageKey:      expectedStorageKey,
+		Visibility:      req.Visibility,
+		PasswordHash:    passwordHash,
+		ExpiresAt:       expiresAt,
+		CreatedAt:       now,
+		MD5Hash:         req.MD5Hash,
+		SHA256Hash:      req.SHA256Hash,
+		StorageProvider: providerName,
 	}
 
 	if err := s.repo.InsertFile(ctx, record); err != nil {

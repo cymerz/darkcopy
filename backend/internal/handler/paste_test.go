@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/gthbn/pastebin/internal/highlight"
-	"github.com/gthbn/pastebin/internal/paste"
-	"github.com/gthbn/pastebin/internal/settings"
+	"github.com/cymerz/darkcopy/internal/highlight"
+	"github.com/cymerz/darkcopy/internal/paste"
+	"github.com/cymerz/darkcopy/internal/settings"
 )
 
 // --- Mock implementations ---
@@ -40,6 +40,18 @@ func (m *mockPasteService) GetBySlug(ctx context.Context, slug string) (*paste.P
 	return nil, paste.ErrNotFound
 }
 
+func (m *mockPasteService) IncrementViews(ctx context.Context, slug string) error {
+	return nil
+}
+
+func (m *mockPasteService) Search(ctx context.Context, query string, limit int) ([]*paste.PasteSummary, error) {
+	return nil, nil
+}
+
+func (m *mockPasteService) Fork(ctx context.Context, originalSlug string) (*paste.Paste, error) {
+	return nil, paste.ErrNotFound
+}
+
 func (m *mockPasteService) ValidatePassword(ctx context.Context, slug, password string) (bool, error) {
 	if m.validatePasswordFn != nil {
 		return m.validatePasswordFn(ctx, slug, password)
@@ -51,13 +63,8 @@ func (m *mockPasteService) ListPublicRecent(ctx context.Context, limit int) ([]*
 	if m.listPublicRecentFn != nil {
 		return m.listPublicRecentFn(ctx, limit)
 	}
-	return nil, nil
+		return nil, nil
 }
-
-func (m *mockPasteService) IncrementViews(ctx context.Context, slug string) error {
-	return nil
-}
-
 
 type mockHighlighter struct {
 	highlightFn          func(content, language string) (string, error)
@@ -772,5 +779,70 @@ func TestHandleCreate_Disabled(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("expected status 403 Forbidden, got %d", rec.Code)
+	}
+}
+
+func TestHandleCreate_CLITextRaw_Succeeds(t *testing.T) {
+	ps := &mockPasteService{
+		createFn: func(ctx context.Context, req paste.CreatePasteRequest) (*paste.Paste, error) {
+			if req.Content != "raw content" {
+				t.Errorf("expected raw content, got %q", req.Content)
+			}
+			return &paste.Paste{
+				Slug: "rawslug1",
+			}, nil
+		},
+	}
+	h := NewPasteHandler(ps, &mockHighlighter{}, &mockAccessController{}, nil)
+	router := setupRouter(h)
+
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("raw content"))
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("User-Agent", "curl/7.79.1")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Errorf("expected status 201 Created, got %d", rec.Code)
+	}
+
+	body := strings.TrimSpace(rec.Body.String())
+	if !strings.HasSuffix(body, "/rawslug1") {
+		t.Errorf("expected plain text link ending in /rawslug1, got %q", body)
+	}
+}
+
+func TestHandleCreate_CLITextForm_Succeeds(t *testing.T) {
+	ps := &mockPasteService{
+		createFn: func(ctx context.Context, req paste.CreatePasteRequest) (*paste.Paste, error) {
+			if req.Content != "form content" {
+				t.Errorf("expected form content, got %q", req.Content)
+			}
+			return &paste.Paste{
+				Slug: "formslug1",
+			}, nil
+		},
+	}
+	h := NewPasteHandler(ps, &mockHighlighter{}, &mockAccessController{}, nil)
+	router := setupRouter(h)
+
+	form := url.Values{}
+	form.Set("content", "form content")
+
+	req := httptest.NewRequest(http.MethodPost, "/pastes", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", "curl/7.79.1")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Errorf("expected status 201 Created, got %d", rec.Code)
+	}
+
+	body := strings.TrimSpace(rec.Body.String())
+	if !strings.HasSuffix(body, "/formslug1") {
+		t.Errorf("expected plain text link ending in /formslug1, got %q", body)
 	}
 }

@@ -54,35 +54,43 @@ function ExpiryListEditor({
         <h3 className="text-sm font-mono text-secondary uppercase tracking-wider">{title}</h3>
         <p className="mt-1 text-xs text-on-surface-variant font-mono">{hint}</p>
       </div>
-      <ul className="space-y-2">
+      <ul className="space-y-3">
         {options.map((o, i) => (
-          <li key={i} className="flex flex-wrap items-center gap-2">
-            <input
-              type="text"
-              value={o.label}
-              onChange={(e) => update(i, { label: e.target.value })}
-              placeholder="Label (e.g. 1 Hour)"
-              disabled={disabled}
-              className={`${INPUT_CLASS} max-w-[12rem] flex-1`}
-            />
-            <input
-              type="number"
-              min={0}
-              value={o.minutes}
-              onChange={(e) => update(i, { minutes: Number(e.target.value) })}
-              placeholder="Minutes"
-              disabled={disabled}
-              className={`${INPUT_CLASS} max-w-[8rem]`}
-            />
-            <span className="text-xs text-on-surface-variant font-mono">minutes (0 = forever)</span>
-            <button
-              type="button"
-              onClick={() => remove(i)}
-              disabled={disabled}
-              className="ml-auto inline-flex min-h-[40px] items-center border-2 border-danger-red/40 px-3 py-1.5 text-sm font-mono text-danger-red transition-colors hover:bg-danger-red/20 disabled:opacity-60"
-            >
-              Remove
-            </button>
+          <li key={i} className="grid grid-cols-12 gap-2 items-center border-b border-surface-variant/30 pb-3 sm:border-b-0 sm:pb-0">
+            <div className="col-span-12 sm:col-span-5">
+              <input
+                type="text"
+                value={o.label}
+                onChange={(e) => update(i, { label: e.target.value })}
+                placeholder="Label (e.g. 1 Hour)"
+                disabled={disabled}
+                className={`${INPUT_CLASS}`}
+              />
+            </div>
+            <div className="col-span-6 sm:col-span-3">
+              <input
+                type="number"
+                min={0}
+                value={o.minutes}
+                onChange={(e) => update(i, { minutes: Number(e.target.value) })}
+                placeholder="Minutes"
+                disabled={disabled}
+                className={`${INPUT_CLASS}`}
+              />
+            </div>
+            <div className="col-span-6 sm:col-span-2 text-xs text-on-surface-variant font-mono">
+              min (0=∞)
+            </div>
+            <div className="col-span-12 sm:col-span-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => remove(i)}
+                disabled={disabled}
+                className="w-full sm:w-auto inline-flex min-h-[40px] items-center justify-center border-2 border-danger-red/40 px-3 py-1.5 text-sm font-mono text-danger-red transition-colors hover:bg-danger-red/20 disabled:opacity-60"
+              >
+                Remove
+              </button>
+            </div>
           </li>
         ))}
       </ul>
@@ -266,6 +274,22 @@ export function AdminSettingsForm({
           />
           <span className="block text-xs text-gray-500 dark:text-gray-500">0 = unlimited</span>
         </label>
+        <label className="space-y-2">
+          <span className="block text-sm font-mono text-secondary uppercase tracking-wider">
+            Max Global Uploads / Day
+          </span>
+          <input
+            type="number"
+            min={0}
+            value={settings.max_daily_uploads ?? 0}
+            onChange={(e) =>
+              patch({ max_daily_uploads: Number(e.target.value) })
+            }
+            disabled={saving}
+            className={INPUT_CLASS}
+          />
+          <span className="block text-xs text-gray-500 dark:text-gray-500">0 = unlimited, caps total uploads across all users</span>
+        </label>
       </div>
 
       {/* Daily size limits */}
@@ -305,7 +329,7 @@ export function AdminSettingsForm({
       </div>
 
       {/* Temporary Toggles */}
-      <div className="grid gap-4 sm:grid-cols-3 border-2 border-surface-variant bg-surface-container-lowest p-4">
+      <div className="grid gap-4 sm:grid-cols-2 border-2 border-surface-variant bg-surface-container-lowest p-4">
         <label className="flex items-center space-x-3 cursor-pointer">
           <input
             type="checkbox"
@@ -340,7 +364,7 @@ export function AdminSettingsForm({
             </span>
           </div>
         </label>
-        <label className="flex items-center space-x-3 cursor-pointer">
+        <label className="flex items-center space-x-3 cursor-pointer border-t border-surface-variant pt-3 sm:border-t-0 sm:pt-0">
           <input
             type="checkbox"
             checked={settings.use_direct_upload ?? false}
@@ -350,10 +374,27 @@ export function AdminSettingsForm({
           />
           <div>
             <span className="block text-sm font-mono text-secondary uppercase tracking-wider">
-              Use Direct-to-S3 Upload
+              1. Web UI Direct S3 Upload
             </span>
             <span className="block text-xs text-on-surface-variant font-mono">
-              Upload files directly to S3 storage via presigned URLs.
+              Browser upload form uses presigned S3 URLs directly.
+            </span>
+          </div>
+        </label>
+        <label className="flex items-center space-x-3 cursor-pointer border-t border-surface-variant pt-3 sm:border-t-0 sm:pt-0">
+          <input
+            type="checkbox"
+            checked={settings.enforce_direct_upload_api ?? false}
+            onChange={(e) => patch({ enforce_direct_upload_api: e.target.checked })}
+            disabled={saving}
+            className="h-4 w-4 border-2 border-surface-variant text-secondary focus:ring-secondary bg-transparent"
+          />
+          <div>
+            <span className="block text-sm font-mono text-secondary uppercase tracking-wider">
+              2. Block Server Proxy Uploads (API / CLI)
+            </span>
+            <span className="block text-xs text-on-surface-variant font-mono">
+              Blocks direct POST /api/upload proxy uploads to save server bandwidth.
             </span>
           </div>
         </label>

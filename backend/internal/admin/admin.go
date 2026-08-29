@@ -9,7 +9,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/gthbn/pastebin/internal/paste"
+	"github.com/cymerz/darkcopy/internal/paste"
 )
 
 // ErrNotFound is returned when the requested item does not exist.
@@ -65,7 +65,8 @@ type Stats struct {
 // PasteRepository defines the paste persistence operations needed by the admin
 // service.
 type PasteRepository interface {
-	ListAllPastes(ctx context.Context, limit, offset int) ([]*PasteItem, error)
+	ListAllPastes(ctx context.Context, limit, offset int, query string) ([]*PasteItem, error)
+	CountAllPastes(ctx context.Context, query string) (int, error)
 	DeletePasteBySlug(ctx context.Context, slug string) (bool, error)
 	CountPastes(ctx context.Context) (int, error)
 	ListTopPastes(ctx context.Context, limit int) ([]*PasteItem, error)
@@ -74,7 +75,8 @@ type PasteRepository interface {
 // FileRepository defines the file persistence operations needed by the admin
 // service.
 type FileRepository interface {
-	ListAllFiles(ctx context.Context, limit, offset int) ([]*FileItem, error)
+	ListAllFiles(ctx context.Context, limit, offset int, query string) ([]*FileItem, error)
+	CountAllFiles(ctx context.Context, query string) (int, error)
 	GetBySlug(ctx context.Context, slug string) (*paste.FileRecord, error)
 	DeleteFileBySlug(ctx context.Context, slug string) (bool, error)
 	CountFiles(ctx context.Context) (int, error)
@@ -114,9 +116,16 @@ func NewService(pasteRepo PasteRepository, fileRepo FileRepository, storage File
 }
 
 // ListPastes returns all pastes (any visibility, including expired) ordered by
-// most recent first.
-func (s *Service) ListPastes(ctx context.Context, limit, offset int) ([]*PasteItem, error) {
-	return s.pasteRepo.ListAllPastes(ctx, limit, offset)
+// most recent first. When query is non-empty, results are filtered by ILIKE
+// match on title, slug, or content.
+func (s *Service) ListPastes(ctx context.Context, limit, offset int, query string) ([]*PasteItem, error) {
+	return s.pasteRepo.ListAllPastes(ctx, limit, offset, query)
+}
+
+// CountPastesWithQuery returns the total number of pastes matching an optional
+// search query.
+func (s *Service) CountPastesWithQuery(ctx context.Context, query string) (int, error) {
+	return s.pasteRepo.CountAllPastes(ctx, query)
 }
 
 // DeletePaste permanently removes a paste by its slug. Returns ErrNotFound when
@@ -132,9 +141,16 @@ func (s *Service) DeletePaste(ctx context.Context, slug string) error {
 	return nil
 }
 
-// ListFiles returns all uploaded files ordered by most recent first.
-func (s *Service) ListFiles(ctx context.Context, limit, offset int) ([]*FileItem, error) {
-	return s.fileRepo.ListAllFiles(ctx, limit, offset)
+// ListFiles returns all uploaded files ordered by most recent first. When query
+// is non-empty, results are filtered by ILIKE match on filename or slug.
+func (s *Service) ListFiles(ctx context.Context, limit, offset int, query string) ([]*FileItem, error) {
+	return s.fileRepo.ListAllFiles(ctx, limit, offset, query)
+}
+
+// CountFilesWithQuery returns the total number of files matching an optional
+// search query.
+func (s *Service) CountFilesWithQuery(ctx context.Context, query string) (int, error) {
+	return s.fileRepo.CountAllFiles(ctx, query)
 }
 
 // DeleteFile permanently removes a file record and its blob on disk. The DB row
@@ -196,7 +212,7 @@ func (s *Service) Stats(ctx context.Context) (*Stats, error) {
 		names := multiStorage.GetProviderNames()
 		// Fetch all files metadata to calculate exact byte distribution
 		// Limit is set to 100,000 as a reasonable upper bound for fully-in-memory aggregation.
-		files, err := s.fileRepo.ListAllFiles(ctx, 100000, 0)
+		files, err := s.fileRepo.ListAllFiles(ctx, 100000, 0, "")
 		if err != nil {
 			return nil, err
 		}

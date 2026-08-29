@@ -12,6 +12,11 @@ import type {
   AdminReportListResponse,
   ReportResourceType,
   ReportStatus,
+  PasteSummary,
+  FileSummary,
+  AdminBackupItem,
+  AdminBackupListResponse,
+  AdminRestoreResult,
 } from './types';
 import { APIError } from './types';
 
@@ -123,8 +128,9 @@ export async function createPaste(
  *
  * Uses `cache: 'no-store'` so Next.js Server Components always re-fetch.
  */
-export async function getPaste(slug: string): Promise<PasteViewResponse> {
-  return apiFetch<PasteViewResponse>(`/${slug}`, { cache: 'no-store' });
+export async function getPaste(slug: string, peek?: boolean): Promise<PasteViewResponse> {
+  const query = peek ? '?peek=true' : '';
+  return apiFetch<PasteViewResponse>(`/${slug}${query}`, { cache: 'no-store' });
 }
 
 /**
@@ -247,6 +253,45 @@ export async function unlockFile(
   });
 }
 
+/**
+ * GET /search — Search public pastes containing the query.
+ */
+export async function searchPastes(
+  query: string,
+  limit?: number,
+): Promise<PasteSummary[]> {
+  const params = new URLSearchParams({ q: query });
+  if (limit !== undefined) {
+    params.append('limit', limit.toString());
+  }
+  return apiFetch<PasteSummary[]>(`/search?${params.toString()}`, { cache: 'no-store' });
+}
+
+/**
+ * GET /f/search — Search public files by filename.
+ */
+export async function searchFiles(
+  query: string,
+  limit?: number,
+): Promise<FileSummary[]> {
+  const params = new URLSearchParams({ q: query });
+  if (limit !== undefined) {
+    params.append('limit', limit.toString());
+  }
+  return apiFetch<FileSummary[]>(`/f/search?${params.toString()}`, { cache: 'no-store' });
+}
+
+/**
+ * GET /{slug}/fork — Get paste data for forking (pre-filling a new paste form).
+ */
+export async function forkPaste(
+  slug: string,
+): Promise<{ title: string; content: string; language: string }> {
+  return apiFetch<{ title: string; content: string; language: string }>(`/${slug}/fork`, {
+    cache: 'no-store',
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Admin (hidden) API
 //
@@ -266,11 +311,19 @@ export async function getAdminStats(token: string): Promise<AdminStats> {
   });
 }
 
-/** GET /admin/pastes — list every paste (any visibility, including expired). */
+/** GET /admin/pastes — list every paste (any visibility, including expired). Supports pagination and search. */
 export async function getAdminPastes(
   token: string,
+  limit?: number,
+  offset?: number,
+  q?: string,
 ): Promise<AdminPasteListResponse> {
-  return apiFetch<AdminPasteListResponse>('/admin/pastes', {
+  const params = new URLSearchParams();
+  if (limit !== undefined) params.set('limit', String(limit));
+  if (offset !== undefined) params.set('offset', String(offset));
+  if (q) params.set('q', q);
+  const query = params.toString();
+  return apiFetch<AdminPasteListResponse>(`/admin/pastes${query ? `?${query}` : ''}`, {
     cache: 'no-store',
     headers: { 'X-Admin-Token': token },
   });
@@ -290,11 +343,19 @@ export async function deleteAdminPaste(
   );
 }
 
-/** GET /admin/files — list every uploaded file. */
+/** GET /admin/files — list every uploaded file. Supports pagination and search. */
 export async function getAdminFiles(
   token: string,
+  limit?: number,
+  offset?: number,
+  q?: string,
 ): Promise<AdminFileListResponse> {
-  return apiFetch<AdminFileListResponse>('/admin/files', {
+  const params = new URLSearchParams();
+  if (limit !== undefined) params.set('limit', String(limit));
+  if (offset !== undefined) params.set('offset', String(offset));
+  if (q) params.set('q', q);
+  const query = params.toString();
+  return apiFetch<AdminFileListResponse>(`/admin/files${query ? `?${query}` : ''}`, {
     cache: 'no-store',
     headers: { 'X-Admin-Token': token },
   });
@@ -419,3 +480,81 @@ export async function deleteAdminReport(
     },
   );
 }
+
+// ---------------------------------------------------------------------------
+// Admin Backup API
+// ---------------------------------------------------------------------------
+
+/** GET /admin/backups — list available snapshot files. */
+export async function getAdminBackups(
+  token: string,
+): Promise<AdminBackupListResponse> {
+  return apiFetch<AdminBackupListResponse>('/admin/backups', {
+    cache: 'no-store',
+    headers: { 'X-Admin-Token': token },
+  });
+}
+
+/** POST /admin/backups/create — trigger creation of an instant backup snapshot. */
+export async function createAdminBackup(
+  token: string,
+): Promise<{ success: boolean; backup: AdminBackupItem }> {
+  return apiFetch<{ success: boolean; backup: AdminBackupItem }>('/admin/backups/create', {
+    method: 'POST',
+    headers: { 'X-Admin-Token': token },
+  });
+}
+
+/** POST /admin/backups/restore — restore system state from a server snapshot. */
+export async function restoreRecentAdminBackup(
+  token: string,
+  filename: string,
+  wipeFirst = false,
+): Promise<AdminRestoreResult> {
+  return apiFetch<AdminRestoreResult>('/admin/backups/restore', {
+    method: 'POST',
+    headers: {
+      'X-Admin-Token': token,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ filename, wipe_first: wipeFirst }),
+  });
+}
+
+/** POST /admin/backups/restore-json — upload & restore a JSON backup file. */
+export async function restoreUploadedAdminBackup(
+  token: string,
+  file: File,
+  wipeFirst = false,
+): Promise<AdminRestoreResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (wipeFirst) {
+    formData.append('wipe_first', 'true');
+  }
+
+  const query = wipeFirst ? '?wipe_first=true' : '';
+  const url = buildUrl(`/admin/backups/restore-json${query}`);
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'X-Admin-Token': token,
+      Accept: 'application/json',
+    },
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => ({ error: 'Upload failed', code: 'UNKNOWN' }));
+    throw new APIError(errorBody.error || 'Upload failed', errorBody.code || 'UNKNOWN', res.status);
+  }
+
+  return (await res.json()) as AdminRestoreResult;
+}
+
+/** Helper to trigger browser download for a snapshot file. */
+export function getAdminBackupDownloadUrl(token: string, filename: string): string {
+  const base = buildUrl(`/admin/backups/download/${encodeURIComponent(filename)}`);
+  return `${base}?token=${encodeURIComponent(token)}`;
+}
+

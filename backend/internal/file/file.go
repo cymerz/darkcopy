@@ -5,7 +5,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/gthbn/pastebin/internal/paste"
+	"github.com/cymerz/darkcopy/internal/paste"
 )
 
 // FileService defines the interface for file upload and retrieval operations.
@@ -18,6 +18,6 @@ type FileService interface {
 
 	// Direct S3 upload methods
 	SupportsUploadPresigning() bool
-	PresignUploadURL(ctx context.Context, filename, contentType string) (slug, storageKey, uploadURL string, err error)
+	PresignUploadURL(ctx context.Context, filename, contentType string, size int64) (slug, storageKey, uploadURL string, err error)
 	RegisterUploadedFile(ctx context.Context, req paste.RegisterFileRequest) (*paste.FileRecord, error)
 }

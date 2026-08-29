@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gthbn/pastebin/internal/highlight"
-	"github.com/gthbn/pastebin/internal/paste"
-	"github.com/gthbn/pastebin/internal/settings"
+	"github.com/cymerz/darkcopy/internal/highlight"
+	"github.com/cymerz/darkcopy/internal/paste"
+	"github.com/cymerz/darkcopy/internal/settings"
 )
 
 // PasteService defines the interface for paste operations used by the handler.
@@ -19,6 +19,8 @@ type PasteService interface {
 	ValidatePassword(ctx context.Context, slug, password string) (bool, error)
 	ListPublicRecent(ctx context.Context, limit int) ([]*paste.PasteSummary, error)
 	IncrementViews(ctx context.Context, slug string) error
+	Search(ctx context.Context, query string, limit int) ([]*paste.PasteSummary, error)
+	Fork(ctx context.Context, originalSlug string) (*paste.Paste, error)
 }
 
 // SyntaxHighlighter defines the interface for syntax highlighting used by the handler.

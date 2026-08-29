@@ -12,7 +12,7 @@ import (
 
 // StartFlusher runs a periodic background task to flush buffered views and downloads
 // from Redis to the PostgreSQL database.
-func StartFlusher(ctx context.Context, rdb *redis.Client, pool *pgxpool.Pool, interval time.Duration, logger *slog.Logger) {
+func StartFlusher(ctx context.Context, rdb *redis.Client, writePool *pgxpool.Pool, interval time.Duration, logger *slog.Logger) {
 	ticker := time.NewTicker(interval)
 	go func() {
 		defer ticker.Stop()
@@ -21,14 +21,14 @@ func StartFlusher(ctx context.Context, rdb *redis.Client, pool *pgxpool.Pool, in
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				flushViews(ctx, rdb, pool, logger)
-				flushDownloads(ctx, rdb, pool, logger)
+				flushViews(ctx, rdb, writePool, logger)
+				flushDownloads(ctx, rdb, writePool, logger)
 			}
 		}
 	}()
 }
 
-func flushViews(ctx context.Context, rdb *redis.Client, pool *pgxpool.Pool, logger *slog.Logger) {
+func flushViews(ctx context.Context, rdb *redis.Client, writePool *pgxpool.Pool, logger *slog.Logger) {
 	// Atomic rename to ensure we don't drop increments that happen during flushing
 	err := rdb.Rename(ctx, "paste:views", "paste:views:flush").Err()
 	if err == redis.Nil {
@@ -51,7 +51,7 @@ func flushViews(ctx context.Context, rdb *redis.Client, pool *pgxpool.Pool, logg
 	}
 
 	// Update DB
-	tx, err := pool.Begin(ctx)
+	tx, err := writePool.Begin(ctx)
 	if err != nil {
 		logger.Error("failed to start database transaction for views flush", "error", err)
 		return
@@ -81,7 +81,7 @@ func flushViews(ctx context.Context, rdb *redis.Client, pool *pgxpool.Pool, logg
 	}
 }
 
-func flushDownloads(ctx context.Context, rdb *redis.Client, pool *pgxpool.Pool, logger *slog.Logger) {
+func flushDownloads(ctx context.Context, rdb *redis.Client, writePool *pgxpool.Pool, logger *slog.Logger) {
 	// Atomic rename to ensure we don't drop increments that happen during flushing
 	err := rdb.Rename(ctx, "file:downloads", "file:downloads:flush").Err()
 	if err == redis.Nil {
@@ -103,7 +103,7 @@ func flushDownloads(ctx context.Context, rdb *redis.Client, pool *pgxpool.Pool, 
 		return
 	}
 
-	tx, err := pool.Begin(ctx)
+	tx, err := writePool.Begin(ctx)
 	if err != nil {
 		logger.Error("failed to start database transaction for downloads flush", "error", err)
 		return

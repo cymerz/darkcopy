@@ -57,6 +57,16 @@ export default function handler(req: IncomingMessage, res: ServerResponse) {
     }
   }
 
+  // Inject host and proto proxy headers. The backend uses these to construct
+  // absolute URLs (e.g. paste creation responses). Derive proto from the app
+  // URL env var to avoid trusting client-spoofable headers like X-Forwarded-Proto.
+  if (req.headers['host']) {
+    headers['x-forwarded-host'] = req.headers['host'];
+  }
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+  const proto = appUrl.startsWith('https') ? 'https' : 'http';
+  headers['x-forwarded-proto'] = proto;
+
   const proxyReq = http.request(
     {
       hostname: targetUrl.hostname,

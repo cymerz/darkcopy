@@ -15,10 +15,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/gthbn/pastebin/internal/file"
-	"github.com/gthbn/pastebin/internal/paste"
-	"github.com/gthbn/pastebin/internal/quota"
-	"github.com/gthbn/pastebin/internal/settings"
+	"github.com/cymerz/darkcopy/internal/file"
+	"github.com/cymerz/darkcopy/internal/paste"
+	"github.com/cymerz/darkcopy/internal/quota"
+	"github.com/cymerz/darkcopy/internal/settings"
 )
 
 // mockFileService is a mock implementation of FileService for testing.
@@ -73,8 +73,12 @@ func (m *mockFileService) SupportsUploadPresigning() bool {
 	return false
 }
 
-func (m *mockFileService) PresignUploadURL(ctx context.Context, filename, contentType string) (slug, storageKey, uploadURL string, err error) {
+func (m *mockFileService) PresignUploadURL(ctx context.Context, filename, contentType string, size int64) (slug, storageKey, uploadURL string, err error) {
 	return "", "", "", nil
+}
+
+func (m *mockFileService) Search(ctx context.Context, query string, limit int) ([]*paste.FileSummary, error) {
+	return nil, nil
 }
 
 func (m *mockFileService) RegisterUploadedFile(ctx context.Context, req paste.RegisterFileRequest) (*paste.FileRecord, error) {

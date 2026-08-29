@@ -6,22 +6,30 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
-	"github.com/gthbn/pastebin/internal/admin"
-	"github.com/gthbn/pastebin/internal/expiry"
-	"github.com/gthbn/pastebin/internal/paste"
+	"github.com/cymerz/darkcopy/internal/admin"
+	"github.com/cymerz/darkcopy/internal/expiry"
+	"github.com/cymerz/darkcopy/internal/paste"
 )
 
 // PasteRepo implements paste.PasteRepository using pgxpool.
 type PasteRepo struct {
-	pool *pgxpool.Pool
-	rdb  *redis.Client
+	writePool *pgxpool.Pool
+	readPool  *pgxpool.Pool
+	rdb       *redis.Client
 }
 
 // NewPasteRepo creates a new PasteRepo.
-func NewPasteRepo(pool *pgxpool.Pool) *PasteRepo {
-	return &PasteRepo{pool: pool}
+func NewPasteRepo(writePool, readPool *pgxpool.Pool) *PasteRepo {
+	if readPool == nil {
+		readPool = writePool
+	}
+	return &PasteRepo{
+		writePool: writePool,
+		readPool:  readPool,
+	}
 }
 
 // WithRedis sets the Redis client for caching and count buffering.
@@ -32,10 +40,13 @@ func (r *PasteRepo) WithRedis(rdb *redis.Client) *PasteRepo {
 
 // InsertPaste inserts a new paste into the database.
 func (r *PasteRepo) InsertPaste(ctx context.Context, p *paste.Paste) error {
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO pastes (id, slug, title, content, language, visibility, password_hash, expires_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, p.ID, p.Slug, p.Title, p.Content, p.Language, p.Visibility, nilIfEmpty(p.PasswordHash), p.ExpiresAt, p.CreatedAt)
+	_, err := r.writePool.Exec(ctx, `
+		INSERT INTO pastes (id, slug, title, content, language, visibility, password_hash, expires_at, created_at, burn_after_read, is_encrypted)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, p.ID, p.Slug, p.Title, p.Content, p.Language, p.Visibility, nilIfEmpty(p.PasswordHash), p.ExpiresAt, p.CreatedAt, p.BurnAfterRead, p.IsEncrypted)
+	if err == nil && r.rdb != nil {
+		r.rdb.Del(ctx, "paste:recent")
+	}
 	return err
 }
 
@@ -43,6 +54,12 @@ func (r *PasteRepo) InsertPaste(ctx context.Context, p *paste.Paste) error {
 func (r *PasteRepo) GetBySlug(ctx context.Context, slug string) (*paste.Paste, error) {
 	if r.rdb != nil {
 		cacheKey := "paste:cache:" + slug
+		// Check for deletion tombstone first to prevent re-caching stale data during replication lag
+		tombstone, err := r.rdb.Exists(ctx, "paste:tombstone:"+slug).Result()
+		if err == nil && tombstone > 0 {
+			return nil, pgx.ErrNoRows
+		}
+
 		cachedVal, err := r.rdb.Get(ctx, cacheKey).Bytes()
 		if err == nil {
 			var p paste.Paste
@@ -52,16 +69,16 @@ func (r *PasteRepo) GetBySlug(ctx context.Context, slug string) (*paste.Paste, e
 		}
 	}
 
-	if r.pool == nil {
+	if r.readPool == nil {
 		return nil, nil
 	}
 
 	p := &paste.Paste{}
 	var passwordHash *string
-	err := r.pool.QueryRow(ctx, `
-		SELECT id, slug, title, content, language, visibility, password_hash, expires_at, created_at, views
+	err := r.readPool.QueryRow(ctx, `
+		SELECT id, slug, title, content, language, visibility, password_hash, expires_at, created_at, views, burn_after_read, is_encrypted
 		FROM pastes WHERE slug = $1
-	`, slug).Scan(&p.ID, &p.Slug, &p.Title, &p.Content, &p.Language, &p.Visibility, &passwordHash, &p.ExpiresAt, &p.CreatedAt, &p.Views)
+	`, slug).Scan(&p.ID, &p.Slug, &p.Title, &p.Content, &p.Language, &p.Visibility, &passwordHash, &p.ExpiresAt, &p.CreatedAt, &p.Views, &p.BurnAfterRead, &p.IsEncrypted)
 	if err != nil {
 		return nil, err
 	}
@@ -82,6 +99,11 @@ func (r *PasteRepo) GetBySlug(ctx context.Context, slug string) (*paste.Paste, e
 					ttl = remaining
 				}
 			}
+			// Re-verify tombstone wasn't set during database query execution
+			tombstone, terr := r.rdb.Exists(ctx, "paste:tombstone:"+slug).Result()
+			if terr == nil && tombstone > 0 {
+				return p, nil
+			}
 			_ = r.rdb.Set(ctx, "paste:cache:"+slug, cachedVal, ttl).Err()
 		}
 	}
@@ -91,7 +113,18 @@ func (r *PasteRepo) GetBySlug(ctx context.Context, slug string) (*paste.Paste, e
 
 // ListPublicRecent returns the most recent public pastes up to the given limit.
 func (r *PasteRepo) ListPublicRecent(ctx context.Context, limit int) ([]*paste.PasteSummary, error) {
-	rows, err := r.pool.Query(ctx, `
+	// Serve from cache when possible
+	if r.rdb != nil && limit <= 20 {
+		cached, err := r.rdb.Get(ctx, "paste:recent").Bytes()
+		if err == nil {
+			var summaries []*paste.PasteSummary
+			if jsonErr := json.Unmarshal(cached, &summaries); jsonErr == nil {
+				return summaries, nil
+			}
+		}
+	}
+
+	rows, err := r.readPool.Query(ctx, `
 		SELECT slug, title, language, created_at, expires_at
 		FROM pastes
 		WHERE visibility = 'public'
@@ -112,18 +145,43 @@ func (r *PasteRepo) ListPublicRecent(ctx context.Context, limit int) ([]*paste.P
 		}
 		summaries = append(summaries, s)
 	}
-	return summaries, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Cache for 60s — fresh enough for the home page
+	if r.rdb != nil && limit <= 20 {
+		if cached, jsonErr := json.Marshal(summaries); jsonErr == nil {
+			r.rdb.Set(ctx, "paste:recent", cached, 60*time.Second)
+		}
+	}
+
+	return summaries, nil
 }
 
 // ListAllPastes returns all pastes (any visibility, including expired) ordered
-// by most recent first. Intended for administrative use only.
-func (r *PasteRepo) ListAllPastes(ctx context.Context, limit, offset int) ([]*admin.PasteItem, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT slug, title, language, visibility, (password_hash IS NOT NULL), created_at, expires_at, views
-		FROM pastes
-		ORDER BY created_at DESC
-		LIMIT $1 OFFSET $2
-	`, limit, offset)
+// by most recent first. Intended for administrative use only. When query is
+// non-empty, results are filtered by ILIKE match on title, slug, or content.
+func (r *PasteRepo) ListAllPastes(ctx context.Context, limit, offset int, query string) ([]*admin.PasteItem, error) {
+	var rows pgx.Rows
+	var err error
+	if query != "" {
+		pattern := "%" + query + "%"
+		rows, err = r.readPool.Query(ctx, `
+			SELECT slug, title, language, visibility, (password_hash IS NOT NULL), created_at, expires_at, views
+			FROM pastes
+			WHERE title ILIKE $1 OR slug ILIKE $1 OR content ILIKE $1
+			ORDER BY created_at DESC
+			LIMIT $2 OFFSET $3
+		`, pattern, limit, offset)
+	} else {
+		rows, err = r.readPool.Query(ctx, `
+			SELECT slug, title, language, visibility, (password_hash IS NOT NULL), created_at, expires_at, views
+			FROM pastes
+			ORDER BY created_at DESC
+			LIMIT $1 OFFSET $2
+		`, limit, offset)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -140,16 +198,32 @@ func (r *PasteRepo) ListAllPastes(ctx context.Context, limit, offset int) ([]*ad
 	return items, rows.Err()
 }
 
+// CountAllPastes returns the total number of pastes matching an optional search
+// query (ILIKE on title, slug, or content).
+func (r *PasteRepo) CountAllPastes(ctx context.Context, query string) (int, error) {
+	var count int
+	var err error
+	if query != "" {
+		pattern := "%" + query + "%"
+		err = r.readPool.QueryRow(ctx, `SELECT COUNT(*) FROM pastes WHERE title ILIKE $1 OR slug ILIKE $1 OR content ILIKE $1`, pattern).Scan(&count)
+	} else {
+		err = r.readPool.QueryRow(ctx, `SELECT COUNT(*) FROM pastes`).Scan(&count)
+	}
+	return count, err
+}
+
 // DeletePasteBySlug deletes a paste by its slug. It returns true if a row was
 // deleted, false if no paste matched the slug.
 func (r *PasteRepo) DeletePasteBySlug(ctx context.Context, slug string) (bool, error) {
 	if r.rdb != nil {
 		_ = r.rdb.Del(ctx, "paste:cache:"+slug)
+		// Set a temporary tombstone key in Redis (ttl: 30 seconds) to prevent replica lag re-caching
+		_ = r.rdb.Set(ctx, "paste:tombstone:"+slug, "1", 30*time.Second).Err()
 	}
-	if r.pool == nil {
+	if r.writePool == nil {
 		return true, nil
 	}
-	tag, err := r.pool.Exec(ctx, `DELETE FROM pastes WHERE slug = $1`, slug)
+	tag, err := r.writePool.Exec(ctx, `DELETE FROM pastes WHERE slug = $1`, slug)
 	if err != nil {
 		return false, err
 	}
@@ -159,7 +233,7 @@ func (r *PasteRepo) DeletePasteBySlug(ctx context.Context, slug string) (bool, e
 // CountPastes returns the total number of pastes in the database.
 func (r *PasteRepo) CountPastes(ctx context.Context) (int, error) {
 	var count int
-	err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM pastes`).Scan(&count)
+	err := r.readPool.QueryRow(ctx, `SELECT COUNT(*) FROM pastes`).Scan(&count)
 	return count, err
 }
 
@@ -168,13 +242,13 @@ func (r *PasteRepo) IncrementViews(ctx context.Context, slug string) error {
 	if r.rdb != nil {
 		return r.rdb.HIncrBy(ctx, "paste:views", slug, 1).Err()
 	}
-	_, err := r.pool.Exec(ctx, `UPDATE pastes SET views = views + 1 WHERE slug = $1`, slug)
+	_, err := r.writePool.Exec(ctx, `UPDATE pastes SET views = views + 1 WHERE slug = $1`, slug)
 	return err
 }
 
 // ListTopPastes returns the top limit pastes by views count.
 func (r *PasteRepo) ListTopPastes(ctx context.Context, limit int) ([]*admin.PasteItem, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.readPool.Query(ctx, `
 		SELECT slug, title, language, visibility, (password_hash IS NOT NULL), created_at, expires_at, views
 		FROM pastes
 		ORDER BY views DESC
@@ -196,16 +270,50 @@ func (r *PasteRepo) ListTopPastes(ctx context.Context, limit int) ([]*admin.Past
 	return items, rows.Err()
 }
 
+// SearchPastes searches for public pastes containing the query string.
+func (r *PasteRepo) SearchPastes(ctx context.Context, query string, limit int) ([]*paste.PasteSummary, error) {
+	rows, err := r.readPool.Query(ctx, `
+		SELECT slug, title, language, created_at, expires_at
+		FROM pastes
+		WHERE visibility = 'public'
+		  AND (expires_at IS NULL OR expires_at > NOW())
+		  AND to_tsvector('english', coalesce(title, '') || ' ' || coalesce(content, '')) @@ plainto_tsquery('english', $1)
+		ORDER BY ts_rank(to_tsvector('english', coalesce(title, '') || ' ' || coalesce(content, '')), plainto_tsquery('english', $1)) DESC
+		LIMIT $2
+	`, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var summaries []*paste.PasteSummary
+	for rows.Next() {
+		s := &paste.PasteSummary{}
+		if err := rows.Scan(&s.Slug, &s.Title, &s.Language, &s.CreatedAt, &s.ExpiresAt); err != nil {
+			return nil, err
+		}
+		summaries = append(summaries, s)
+	}
+	return summaries, rows.Err()
+}
+
 
 // FileRepo implements file.FileRepository using pgxpool.
 type FileRepo struct {
-	pool *pgxpool.Pool
-	rdb  *redis.Client
+	writePool *pgxpool.Pool
+	readPool  *pgxpool.Pool
+	rdb       *redis.Client
 }
 
 // NewFileRepo creates a new FileRepo.
-func NewFileRepo(pool *pgxpool.Pool) *FileRepo {
-	return &FileRepo{pool: pool}
+func NewFileRepo(writePool, readPool *pgxpool.Pool) *FileRepo {
+	if readPool == nil {
+		readPool = writePool
+	}
+	return &FileRepo{
+		writePool: writePool,
+		readPool:  readPool,
+	}
 }
 
 // WithRedis sets the Redis client for count buffering.
@@ -216,10 +324,13 @@ func (r *FileRepo) WithRedis(rdb *redis.Client) *FileRepo {
 
 // InsertFile inserts a new file record into the database.
 func (r *FileRepo) InsertFile(ctx context.Context, f *paste.FileRecord) error {
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO files (id, slug, filename, mime_type, size_bytes, storage_key, visibility, password_hash, expires_at, created_at, md5_hash, sha256_hash)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-	`, f.ID, f.Slug, f.Filename, f.MIMEType, f.SizeBytes, f.StorageKey, f.Visibility, nilIfEmpty(f.PasswordHash), f.ExpiresAt, f.CreatedAt, f.MD5Hash, f.SHA256Hash)
+	_, err := r.writePool.Exec(ctx, `
+		INSERT INTO files (id, slug, filename, mime_type, size_bytes, storage_key, visibility, password_hash, expires_at, created_at, md5_hash, sha256_hash, storage_provider)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+	`, f.ID, f.Slug, f.Filename, f.MIMEType, f.SizeBytes, f.StorageKey, f.Visibility, nilIfEmpty(f.PasswordHash), f.ExpiresAt, f.CreatedAt, f.MD5Hash, f.SHA256Hash, nilIfEmpty(f.StorageProvider))
+	if err == nil && r.rdb != nil {
+		r.rdb.Del(ctx, "file:recent")
+	}
 	return err
 }
 
@@ -227,6 +338,12 @@ func (r *FileRepo) InsertFile(ctx context.Context, f *paste.FileRecord) error {
 func (r *FileRepo) GetBySlug(ctx context.Context, slug string) (*paste.FileRecord, error) {
 	if r.rdb != nil {
 		cacheKey := "file:cache:" + slug
+		// Check for deletion tombstone first to prevent re-caching stale data during replication lag
+		tombstone, err := r.rdb.Exists(ctx, "file:tombstone:"+slug).Result()
+		if err == nil && tombstone > 0 {
+			return nil, pgx.ErrNoRows
+		}
+
 		cachedVal, err := r.rdb.Get(ctx, cacheKey).Bytes()
 		if err == nil {
 			var f paste.FileRecord
@@ -236,21 +353,25 @@ func (r *FileRepo) GetBySlug(ctx context.Context, slug string) (*paste.FileRecor
 		}
 	}
 
-	if r.pool == nil {
+	if r.readPool == nil {
 		return nil, nil
 	}
 
 	f := &paste.FileRecord{}
 	var passwordHash *string
-	err := r.pool.QueryRow(ctx, `
-		SELECT id, slug, filename, mime_type, size_bytes, storage_key, visibility, password_hash, expires_at, created_at, downloads, md5_hash, sha256_hash
+	var storageProvider *string
+	err := r.readPool.QueryRow(ctx, `
+		SELECT id, slug, filename, mime_type, size_bytes, storage_key, visibility, password_hash, expires_at, created_at, downloads, md5_hash, sha256_hash, storage_provider
 		FROM files WHERE slug = $1
-	`, slug).Scan(&f.ID, &f.Slug, &f.Filename, &f.MIMEType, &f.SizeBytes, &f.StorageKey, &f.Visibility, &passwordHash, &f.ExpiresAt, &f.CreatedAt, &f.Downloads, &f.MD5Hash, &f.SHA256Hash)
+	`, slug).Scan(&f.ID, &f.Slug, &f.Filename, &f.MIMEType, &f.SizeBytes, &f.StorageKey, &f.Visibility, &passwordHash, &f.ExpiresAt, &f.CreatedAt, &f.Downloads, &f.MD5Hash, &f.SHA256Hash, &storageProvider)
 	if err != nil {
 		return nil, err
 	}
 	if passwordHash != nil {
 		f.PasswordHash = *passwordHash
+	}
+	if storageProvider != nil {
+		f.StorageProvider = *storageProvider
 	}
 
 	if r.rdb != nil {
@@ -266,6 +387,11 @@ func (r *FileRepo) GetBySlug(ctx context.Context, slug string) (*paste.FileRecor
 					ttl = remaining
 				}
 			}
+			// Re-verify tombstone wasn't set during database query execution
+			tombstone, terr := r.rdb.Exists(ctx, "file:tombstone:"+slug).Result()
+			if terr == nil && tombstone > 0 {
+				return f, nil
+			}
 			_ = r.rdb.Set(ctx, "file:cache:"+slug, cachedVal, ttl).Err()
 		}
 	}
@@ -275,7 +401,18 @@ func (r *FileRepo) GetBySlug(ctx context.Context, slug string) (*paste.FileRecor
 
 // ListPublicRecent returns the most recent public files up to the given limit.
 func (r *FileRepo) ListPublicRecent(ctx context.Context, limit int) ([]*paste.FileSummary, error) {
-	rows, err := r.pool.Query(ctx, `
+	// Serve from cache when possible
+	if r.rdb != nil && limit <= 20 {
+		cached, err := r.rdb.Get(ctx, "file:recent").Bytes()
+		if err == nil {
+			var summaries []*paste.FileSummary
+			if jsonErr := json.Unmarshal(cached, &summaries); jsonErr == nil {
+				return summaries, nil
+			}
+		}
+	}
+
+	rows, err := r.readPool.Query(ctx, `
 		SELECT slug, filename, mime_type, size_bytes, created_at, expires_at
 		FROM files
 		WHERE visibility = 'public'
@@ -296,18 +433,43 @@ func (r *FileRepo) ListPublicRecent(ctx context.Context, limit int) ([]*paste.Fi
 		}
 		summaries = append(summaries, s)
 	}
-	return summaries, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Cache for 60s — fresh enough for the home page
+	if r.rdb != nil && limit <= 20 {
+		if cached, jsonErr := json.Marshal(summaries); jsonErr == nil {
+			r.rdb.Set(ctx, "file:recent", cached, 60*time.Second)
+		}
+	}
+
+	return summaries, nil
 }
 
 // ListAllFiles returns all uploaded files ordered by most recent first.
-// Intended for administrative use only.
-func (r *FileRepo) ListAllFiles(ctx context.Context, limit, offset int) ([]*admin.FileItem, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT slug, filename, mime_type, size_bytes, visibility, (password_hash IS NOT NULL), created_at, expires_at, downloads
-		FROM files
-		ORDER BY created_at DESC
-		LIMIT $1 OFFSET $2
-	`, limit, offset)
+// Intended for administrative use only. When query is non-empty, results are
+// filtered by ILIKE match on filename or slug.
+func (r *FileRepo) ListAllFiles(ctx context.Context, limit, offset int, query string) ([]*admin.FileItem, error) {
+	var rows pgx.Rows
+	var err error
+	if query != "" {
+		pattern := "%" + query + "%"
+		rows, err = r.readPool.Query(ctx, `
+			SELECT slug, filename, mime_type, size_bytes, visibility, (password_hash IS NOT NULL), created_at, expires_at, downloads
+			FROM files
+			WHERE filename ILIKE $1 OR slug ILIKE $1
+			ORDER BY created_at DESC
+			LIMIT $2 OFFSET $3
+		`, pattern, limit, offset)
+	} else {
+		rows, err = r.readPool.Query(ctx, `
+			SELECT slug, filename, mime_type, size_bytes, visibility, (password_hash IS NOT NULL), created_at, expires_at, downloads
+			FROM files
+			ORDER BY created_at DESC
+			LIMIT $1 OFFSET $2
+		`, limit, offset)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -324,13 +486,29 @@ func (r *FileRepo) ListAllFiles(ctx context.Context, limit, offset int) ([]*admi
 	return items, rows.Err()
 }
 
+// CountAllFiles returns the total number of files matching an optional search
+// query (ILIKE on filename or slug).
+func (r *FileRepo) CountAllFiles(ctx context.Context, query string) (int, error) {
+	var count int
+	var err error
+	if query != "" {
+		pattern := "%" + query + "%"
+		err = r.readPool.QueryRow(ctx, `SELECT COUNT(*) FROM files WHERE filename ILIKE $1 OR slug ILIKE $1`, pattern).Scan(&count)
+	} else {
+		err = r.readPool.QueryRow(ctx, `SELECT COUNT(*) FROM files`).Scan(&count)
+	}
+	return count, err
+}
+
 // DeleteFileBySlug deletes a file record by its slug. It returns true if a row
 // was deleted, false if no file matched the slug.
 func (r *FileRepo) DeleteFileBySlug(ctx context.Context, slug string) (bool, error) {
 	if r.rdb != nil {
 		_ = r.rdb.Del(ctx, "file:cache:"+slug)
+		// Set a temporary tombstone key in Redis (ttl: 30 seconds) to prevent replica lag re-caching
+		_ = r.rdb.Set(ctx, "file:tombstone:"+slug, "1", 30*time.Second).Err()
 	}
-	tag, err := r.pool.Exec(ctx, `DELETE FROM files WHERE slug = $1`, slug)
+	tag, err := r.writePool.Exec(ctx, `DELETE FROM files WHERE slug = $1`, slug)
 	if err != nil {
 		return false, err
 	}
@@ -340,7 +518,7 @@ func (r *FileRepo) DeleteFileBySlug(ctx context.Context, slug string) (bool, err
 // CountFiles returns the total number of files in the database.
 func (r *FileRepo) CountFiles(ctx context.Context) (int, error) {
 	var count int
-	err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM files`).Scan(&count)
+	err := r.readPool.QueryRow(ctx, `SELECT COUNT(*) FROM files`).Scan(&count)
 	return count, err
 }
 
@@ -349,20 +527,47 @@ func (r *FileRepo) IncrementDownloads(ctx context.Context, slug string) error {
 	if r.rdb != nil {
 		return r.rdb.HIncrBy(ctx, "file:downloads", slug, 1).Err()
 	}
-	_, err := r.pool.Exec(ctx, `UPDATE files SET downloads = downloads + 1 WHERE slug = $1`, slug)
+	_, err := r.writePool.Exec(ctx, `UPDATE files SET downloads = downloads + 1 WHERE slug = $1`, slug)
 	return err
 }
 
 // SumFileSizes returns the sum of size_bytes of all files in the database.
 func (r *FileRepo) SumFileSizes(ctx context.Context) (int64, error) {
 	var total int64
-	err := r.pool.QueryRow(ctx, `SELECT COALESCE(SUM(size_bytes), 0) FROM files`).Scan(&total)
+	err := r.readPool.QueryRow(ctx, `SELECT COALESCE(SUM(size_bytes), 0) FROM files`).Scan(&total)
 	return total, err
+}
+
+// SearchFiles searches for public files containing the query string in their filename.
+func (r *FileRepo) SearchFiles(ctx context.Context, query string, limit int) ([]*paste.FileSummary, error) {
+	rows, err := r.readPool.Query(ctx, `
+		SELECT slug, filename, mime_type, size_bytes, created_at, expires_at
+		FROM files
+		WHERE visibility = 'public'
+		  AND (expires_at IS NULL OR expires_at > NOW())
+		  AND to_tsvector('english', coalesce(filename, '')) @@ plainto_tsquery('english', $1)
+		ORDER BY ts_rank(to_tsvector('english', coalesce(filename, '')), plainto_tsquery('english', $1)) DESC
+		LIMIT $2
+	`, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var summaries []*paste.FileSummary
+	for rows.Next() {
+		s := &paste.FileSummary{}
+		if err := rows.Scan(&s.Slug, &s.Filename, &s.MIMEType, &s.SizeBytes, &s.CreatedAt, &s.ExpiresAt); err != nil {
+			return nil, err
+		}
+		summaries = append(summaries, s)
+	}
+	return summaries, rows.Err()
 }
 
 // ListTopFiles returns the top limit files by downloads count.
 func (r *FileRepo) ListTopFiles(ctx context.Context, limit int) ([]*admin.FileItem, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.readPool.Query(ctx, `
 		SELECT slug, filename, mime_type, size_bytes, visibility, (password_hash IS NOT NULL), created_at, expires_at, downloads
 		FROM files
 		ORDER BY downloads DESC
@@ -385,13 +590,20 @@ func (r *FileRepo) ListTopFiles(ctx context.Context, limit int) ([]*admin.FileIt
 }
 
 type ExpiryStore struct {
-	pool *pgxpool.Pool
-	rdb  *redis.Client
+	writePool *pgxpool.Pool
+	readPool  *pgxpool.Pool
+	rdb       *redis.Client
 }
 
 // NewExpiryStore creates a new ExpiryStore.
-func NewExpiryStore(pool *pgxpool.Pool) *ExpiryStore {
-	return &ExpiryStore{pool: pool}
+func NewExpiryStore(writePool, readPool *pgxpool.Pool) *ExpiryStore {
+	if readPool == nil {
+		readPool = writePool
+	}
+	return &ExpiryStore{
+		writePool: writePool,
+		readPool:  readPool,
+	}
 }
 
 // WithRedis sets the Redis client for cache invalidation.
@@ -402,7 +614,7 @@ func (r *ExpiryStore) WithRedis(rdb *redis.Client) *ExpiryStore {
 
 // ListExpiredPastes returns up to `limit` pastes with expires_at < now.
 func (r *ExpiryStore) ListExpiredPastes(ctx context.Context, now time.Time, limit int) ([]expiry.ExpiredPaste, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.readPool.Query(ctx, `
 		SELECT id, slug FROM pastes
 		WHERE expires_at IS NOT NULL AND expires_at < $1
 		LIMIT $2
@@ -425,23 +637,23 @@ func (r *ExpiryStore) ListExpiredPastes(ctx context.Context, now time.Time, limi
 
 // DeletePaste deletes a paste by its ID.
 func (r *ExpiryStore) DeletePaste(ctx context.Context, id uuid.UUID) error {
-	if r.rdb != nil && r.pool != nil {
+	if r.rdb != nil && r.writePool != nil {
 		var slug string
-		err := r.pool.QueryRow(ctx, `SELECT slug FROM pastes WHERE id = $1`, id).Scan(&slug)
+		err := r.writePool.QueryRow(ctx, `SELECT slug FROM pastes WHERE id = $1`, id).Scan(&slug)
 		if err == nil {
 			_ = r.rdb.Del(ctx, "paste:cache:"+slug)
 		}
 	}
-	if r.pool == nil {
+	if r.writePool == nil {
 		return nil
 	}
-	_, err := r.pool.Exec(ctx, `DELETE FROM pastes WHERE id = $1`, id)
+	_, err := r.writePool.Exec(ctx, `DELETE FROM pastes WHERE id = $1`, id)
 	return err
 }
 
 // ListExpiredFiles returns up to `limit` files with expires_at < now.
 func (r *ExpiryStore) ListExpiredFiles(ctx context.Context, now time.Time, limit int) ([]expiry.ExpiredFile, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.readPool.Query(ctx, `
 		SELECT id, slug, storage_key FROM files
 		WHERE expires_at IS NOT NULL AND expires_at < $1
 		LIMIT $2
@@ -464,15 +676,15 @@ func (r *ExpiryStore) ListExpiredFiles(ctx context.Context, now time.Time, limit
 
 // DeleteFile deletes a file record by its ID.
 func (r *ExpiryStore) DeleteFile(ctx context.Context, id uuid.UUID) error {
-	_, err := r.pool.Exec(ctx, `DELETE FROM files WHERE id = $1`, id)
+	_, err := r.writePool.Exec(ctx, `DELETE FROM files WHERE id = $1`, id)
 	return err
 }
 
 // SlugExists checks whether a slug exists in either the pastes or files table.
-func SlugExists(pool *pgxpool.Pool) func(ctx context.Context, slug string) (bool, error) {
+func SlugExists(readPool *pgxpool.Pool) func(ctx context.Context, slug string) (bool, error) {
 	return func(ctx context.Context, slug string) (bool, error) {
 		var exists bool
-		err := pool.QueryRow(ctx, `
+		err := readPool.QueryRow(ctx, `
 			SELECT EXISTS(
 				SELECT 1 FROM pastes WHERE slug = $1
 				UNION ALL

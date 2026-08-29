@@ -64,12 +64,12 @@ func (s *LocalStorage) Delete(ctx context.Context, storageKey string) error {
 	return nil
 }
 
-// Head checks if a file exists in the local filesystem.
-func (s *LocalStorage) Head(ctx context.Context, storageKey string) error {
+// Head checks if a file exists in the local filesystem and returns its size.
+func (s *LocalStorage) Head(ctx context.Context, storageKey string) (int64, error) {
 	fullPath := filepath.Join(s.baseDir, storageKey)
-	_, err := os.Stat(fullPath)
+	info, err := os.Stat(fullPath)
 	if err != nil {
-		return fmt.Errorf("local storage: file %s does not exist: %w", storageKey, err)
+		return 0, fmt.Errorf("local storage: file %s does not exist: %w", storageKey, err)
 	}
-	return nil
+	return info.Size(), nil
 }

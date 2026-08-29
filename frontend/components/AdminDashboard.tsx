@@ -11,9 +11,14 @@ import {
   getAdminReports,
   updateAdminReportStatus,
   deleteAdminReport,
+  getAdminBackups,
+  createAdminBackup,
+  restoreRecentAdminBackup,
+  restoreUploadedAdminBackup,
+  getAdminBackupDownloadUrl,
 } from '@/lib/api';
 import { APIError, REPORT_REASONS } from '@/lib/types';
-import type { AdminStats, AdminPasteItem, AdminFileItem, AdminReport, ReportStatus } from '@/lib/types';
+import type { AdminStats, AdminPasteItem, AdminFileItem, AdminReport, ReportStatus, AdminBackupItem, AdminRestoreResult } from '@/lib/types';
 import { formatRelativeTime, formatFileSize } from '@/lib/utils';
 import { AdminSettingsForm } from '@/components/AdminSettingsForm';
 
@@ -33,6 +38,18 @@ const VISIBILITY_LABELS: Record<string, string> = { public: 'Public', unlisted: 
 const REASON_LABELS: Record<string, string> = Object.fromEntries(REPORT_REASONS.map((r) => [r.value, r.label]));
 function reasonLabel(reason: string): string { return REASON_LABELS[reason] ?? reason; }
 function isExpired(expiresAt: string | null): boolean { if (!expiresAt) return false; return new Date(expiresAt).getTime() < Date.now(); }
+
+const PAGE_SIZE = 50;
+
+/** Debounced value hook — returns the value after a delay. */
+function useDebouncedValue<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+}
 
 const REPORT_STATUS_LABELS: Record<string, string> = { pending: 'Pending', reviewed: 'Reviewed', dismissed: 'Dismissed' };
 
@@ -108,7 +125,7 @@ function TokenGate() {
   );
 }
 
-type Tab = 'overview' | 'pastes' | 'files' | 'reports' | 'settings';
+type Tab = 'overview' | 'pastes' | 'files' | 'reports' | 'settings' | 'backups';
 
 function Dashboard({ token, onLogout }: { token: string; onLogout: () => void }) {
   const [stats, setStats] = useState<AdminStats | null>(null);
@@ -126,6 +143,17 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
   const [purging, setPurging] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+
+  // Pagination + search state for pastes and files
+  const [pasteSearch, setPasteSearch] = useState('');
+  const [pastePage, setPastePage] = useState(0);
+  const [pasteTotal, setPasteTotal] = useState(0);
+  const [fileSearch, setFileSearch] = useState('');
+  const [filePage, setFilePage] = useState(0);
+  const [fileTotal, setFileTotal] = useState(0);
+
+  const debouncedPasteSearch = useDebouncedValue(pasteSearch, 300);
+  const debouncedFileSearch = useDebouncedValue(fileSearch, 300);
 
   const reload = useCallback(() => { setLoading(true); setReloadKey((k) => k + 1); }, []);
   const topPastes = stats?.top_pastes || [];
@@ -147,15 +175,19 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
 
   useEffect(() => {
     if (tab !== 'pastes') return; let cancelled = false;
-    (async () => { try { setLoadingPastes(true); const r = await getAdminPastes(token); if (cancelled) return; setPastes(r.pastes ?? []); setError(null); } catch (err) { if (cancelled) return; if (err instanceof APIError && (err.status === 401 || err.status === 404)) { onLogout(); return; } setError('Failed to load paste list.'); } finally { if (!cancelled) setLoadingPastes(false); } })();
+    (async () => { try { setLoadingPastes(true); const r = await getAdminPastes(token, PAGE_SIZE, pastePage * PAGE_SIZE, debouncedPasteSearch || undefined); if (cancelled) return; setPastes(r.pastes ?? []); setPasteTotal(r.total ?? 0); setError(null); } catch (err) { if (cancelled) return; if (err instanceof APIError && (err.status === 401 || err.status === 404)) { onLogout(); return; } setError('Failed to load paste list.'); } finally { if (!cancelled) setLoadingPastes(false); } })();
     return () => { cancelled = true; };
-  }, [token, onLogout, tab, reloadKey]);
+  }, [token, onLogout, tab, reloadKey, pastePage, debouncedPasteSearch]);
 
   useEffect(() => {
     if (tab !== 'files') return; let cancelled = false;
-    (async () => { try { setLoadingFiles(true); const r = await getAdminFiles(token); if (cancelled) return; setFiles(r.files ?? []); setError(null); } catch (err) { if (cancelled) return; if (err instanceof APIError && (err.status === 401 || err.status === 404)) { onLogout(); return; } setError('Failed to load file list.'); } finally { if (!cancelled) setLoadingFiles(false); } })();
+    (async () => { try { setLoadingFiles(true); const r = await getAdminFiles(token, PAGE_SIZE, filePage * PAGE_SIZE, debouncedFileSearch || undefined); if (cancelled) return; setFiles(r.files ?? []); setFileTotal(r.total ?? 0); setError(null); } catch (err) { if (cancelled) return; if (err instanceof APIError && (err.status === 401 || err.status === 404)) { onLogout(); return; } setError('Failed to load file list.'); } finally { if (!cancelled) setLoadingFiles(false); } })();
     return () => { cancelled = true; };
-  }, [token, onLogout, tab, reloadKey]);
+  }, [token, onLogout, tab, reloadKey, filePage, debouncedFileSearch]);
+
+  // Reset page to 0 when search query changes
+  useEffect(() => { setPastePage(0); }, [debouncedPasteSearch]);
+  useEffect(() => { setFilePage(0); }, [debouncedFileSearch]);
 
   useEffect(() => {
     if (tab !== 'reports') return; let cancelled = false;
@@ -242,12 +274,15 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
           { key: 'files', label: 'Files', count: stats ? stats.total_files : undefined },
           { key: 'reports', label: 'Reports', count: stats ? stats.pending_reports : undefined, alert: true },
           { key: 'settings', label: 'Settings' },
+          { key: 'backups', label: 'Backup & Restore' },
         ]}
         current={tab} onChange={(k) => setTab(k as Tab)}
       />
 
       {tab === 'settings' ? (
         <AdminSettingsForm token={token} onUnauthorized={onLogout} />
+      ) : tab === 'backups' ? (
+        <AdminBackupSection token={token} onUnauthorized={onLogout} />
       ) : loading ? (
         <p className="py-8 text-center text-sm font-mono text-on-surface-variant">LOADING...</p>
       ) : tab === 'overview' ? (
@@ -340,10 +375,60 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
             </div>
           </div>
         </div>
-      ) : tab === 'pastes' ? loadingPastes ? <p className="py-8 text-center text-xs font-mono text-on-surface-variant">LOADING PASTES...</p> : (
-        <ListSection items={pastes} busySlug={busySlug} onDelete={handleDeletePaste} type="paste" />
-      ) : tab === 'files' ? loadingFiles ? <p className="py-8 text-center text-xs font-mono text-on-surface-variant">LOADING FILES...</p> : (
-        <ListSection items={files} busySlug={busySlug} onDelete={handleDeleteFile} type="file" />
+      ) : tab === 'pastes' ? (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <input type="text" value={pasteSearch} onChange={(e) => setPasteSearch(e.target.value)}
+              placeholder="Search pastes by title, slug, or content..."
+              className="flex-1 min-h-[40px] border-2 border-surface-variant bg-surface-container-lowest px-3 py-2 text-on-surface placeholder-on-surface-variant font-mono text-sm focus:border-secondary focus:outline-none" />
+            {pasteTotal > 0 && <span className="shrink-0 text-xs font-mono text-on-surface-variant">{pasteTotal} result{pasteTotal !== 1 ? 's' : ''}</span>}
+          </div>
+          {loadingPastes ? <p className="py-8 text-center text-xs font-mono text-on-surface-variant">LOADING PASTES...</p> : (
+            <>
+              <ListSection items={pastes} busySlug={busySlug} onDelete={handleDeletePaste} type="paste" />
+              {pasteTotal > PAGE_SIZE && (
+                <div className="flex items-center justify-between px-2">
+                  <button type="button" onClick={() => setPastePage((p) => Math.max(0, p - 1))} disabled={pastePage === 0}
+                    className="inline-flex min-h-[36px] items-center border-2 border-surface-variant text-on-surface-variant px-3 py-1 text-xs font-mono uppercase tracking-wider transition-all hover:border-secondary hover:text-secondary disabled:opacity-40 disabled:cursor-not-allowed">
+                    [ PREV ]
+                  </button>
+                  <span className="text-xs font-mono text-on-surface-variant">Page {pastePage + 1} of {Math.ceil(pasteTotal / PAGE_SIZE)}</span>
+                  <button type="button" onClick={() => setPastePage((p) => p + 1)} disabled={(pastePage + 1) * PAGE_SIZE >= pasteTotal}
+                    className="inline-flex min-h-[36px] items-center border-2 border-surface-variant text-on-surface-variant px-3 py-1 text-xs font-mono uppercase tracking-wider transition-all hover:border-secondary hover:text-secondary disabled:opacity-40 disabled:cursor-not-allowed">
+                    [ NEXT ]
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      ) : tab === 'files' ? (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <input type="text" value={fileSearch} onChange={(e) => setFileSearch(e.target.value)}
+              placeholder="Search files by filename or slug..."
+              className="flex-1 min-h-[40px] border-2 border-surface-variant bg-surface-container-lowest px-3 py-2 text-on-surface placeholder-on-surface-variant font-mono text-sm focus:border-secondary focus:outline-none" />
+            {fileTotal > 0 && <span className="shrink-0 text-xs font-mono text-on-surface-variant">{fileTotal} result{fileTotal !== 1 ? 's' : ''}</span>}
+          </div>
+          {loadingFiles ? <p className="py-8 text-center text-xs font-mono text-on-surface-variant">LOADING FILES...</p> : (
+            <>
+              <ListSection items={files} busySlug={busySlug} onDelete={handleDeleteFile} type="file" />
+              {fileTotal > PAGE_SIZE && (
+                <div className="flex items-center justify-between px-2">
+                  <button type="button" onClick={() => setFilePage((p) => Math.max(0, p - 1))} disabled={filePage === 0}
+                    className="inline-flex min-h-[36px] items-center border-2 border-surface-variant text-on-surface-variant px-3 py-1 text-xs font-mono uppercase tracking-wider transition-all hover:border-secondary hover:text-secondary disabled:opacity-40 disabled:cursor-not-allowed">
+                    [ PREV ]
+                  </button>
+                  <span className="text-xs font-mono text-on-surface-variant">Page {filePage + 1} of {Math.ceil(fileTotal / PAGE_SIZE)}</span>
+                  <button type="button" onClick={() => setFilePage((p) => p + 1)} disabled={(filePage + 1) * PAGE_SIZE >= fileTotal}
+                    className="inline-flex min-h-[36px] items-center border-2 border-surface-variant text-on-surface-variant px-3 py-1 text-xs font-mono uppercase tracking-wider transition-all hover:border-secondary hover:text-secondary disabled:opacity-40 disabled:cursor-not-allowed">
+                    [ NEXT ]
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       ) : loadingReports ? <p className="py-8 text-center text-xs font-mono text-on-surface-variant">LOADING REPORTS...</p> : (
         <ReportsTableSection reports={reports} busyId={busyReportId} onStatus={handleReportStatus} onDeleteContent={handleDeleteReportedContent} onDelete={handleDeleteReport} />
       )}
@@ -418,6 +503,261 @@ function ReportsTableSection({ reports, busyId, onStatus, onDeleteContent, onDel
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function AdminBackupSection({ token, onUnauthorized }: { token: string; onUnauthorized: () => void }) {
+  const [backups, setBackups] = useState<AdminBackupItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [restoringFilename, setRestoringFilename] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [wipeFirst, setWipeFirst] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const fetchBackups = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await getAdminBackups(token);
+      setBackups(res.backups ?? []);
+    } catch (err) {
+      if (err instanceof APIError && (err.status === 401 || err.status === 404)) {
+        onUnauthorized();
+        return;
+      }
+      setError('Failed to fetch backup snapshots.');
+    } finally {
+      setLoading(false);
+    }
+  }, [token, onUnauthorized]);
+
+  useEffect(() => {
+    fetchBackups();
+  }, [fetchBackups]);
+
+  const handleCreateSnapshot = async () => {
+    setCreating(true);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const res = await createAdminBackup(token);
+      setSuccessMsg(`Backup snapshot created: ${res.backup.filename}`);
+      await fetchBackups();
+    } catch (err) {
+      if (err instanceof APIError && (err.status === 401 || err.status === 404)) {
+        onUnauthorized();
+        return;
+      }
+      setError('Failed to create backup snapshot.');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleRestoreSnapshot = async (filename: string) => {
+    const actionLabel = wipeFirst ? 'WIPE ALL EXISTING DATABASE DATA and restore' : 'restore and merge';
+    if (!window.confirm(`RESTORE WARNING: Are you sure you want to ${actionLabel} snapshot "${filename}"?`)) {
+      return;
+    }
+    setRestoringFilename(filename);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const res: AdminRestoreResult = await restoreRecentAdminBackup(token, filename, wipeFirst);
+      setSuccessMsg(`Successfully restored snapshot (${wipeFirst ? 'Clean Restore' : 'Safe Merge'})! Pastes: ${res.restored_pastes}, Files: ${res.restored_files}, Reports: ${res.restored_reports}${res.settings_updated ? ', Settings reloaded' : ''}.`);
+    } catch (err) {
+      if (err instanceof APIError && (err.status === 401 || err.status === 404)) {
+        onUnauthorized();
+        return;
+      }
+      setError(err instanceof APIError ? err.message : 'Failed to restore snapshot.');
+    } finally {
+      setRestoringFilename(null);
+    }
+  };
+
+  const handleDownloadFile = async (filename: string) => {
+    try {
+      const downloadUrl = getAdminBackupDownloadUrl(token, filename);
+      const res = await fetch(downloadUrl, {
+        headers: { 'X-Admin-Token': token },
+      });
+      if (!res.ok) throw new Error('Download failed');
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      setError(`Failed to download backup file "${filename}".`);
+    }
+  };
+
+  const handleUploadRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const actionLabel = wipeFirst ? 'WIPE ALL EXISTING DATABASE DATA and restore' : 'restore and merge';
+    if (!window.confirm(`UPLOAD RESTORE WARNING: Are you sure you want to ${actionLabel} from file "${file.name}"?`)) {
+      e.target.value = '';
+      return;
+    }
+    setUploading(true);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const res: AdminRestoreResult = await restoreUploadedAdminBackup(token, file, wipeFirst);
+      setSuccessMsg(`Successfully restored from JSON file (${wipeFirst ? 'Clean Restore' : 'Safe Merge'})! Pastes: ${res.restored_pastes}, Files: ${res.restored_files}, Reports: ${res.restored_reports}${res.settings_updated ? ', Settings reloaded' : ''}.`);
+    } catch (err) {
+      if (err instanceof APIError && (err.status === 401 || err.status === 404)) {
+        onUnauthorized();
+        return;
+      }
+      setError(err instanceof APIError ? err.message : 'Failed to restore uploaded JSON file.');
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="border-2 border-surface-variant bg-surface-container-lowest p-4 sm:p-6 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b-2 border-surface-variant pb-4">
+          <div>
+            <h2 className="font-mono text-sm font-bold text-secondary uppercase tracking-wider">SYSTEM BACKUPS & RESTORE</h2>
+            <p className="text-xs font-mono text-on-surface-variant mt-1">
+              Create instant server snapshots, download backups, or restore snapshots safely.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleCreateSnapshot}
+            disabled={creating || loading}
+            className="inline-flex min-h-[40px] items-center justify-center border-2 border-secondary text-secondary px-4 py-1.5 text-xs font-mono uppercase tracking-wider transition-all hover:bg-secondary hover:text-black active:translate-y-[1px] disabled:opacity-60"
+          >
+            {creating ? 'CREATING...' : '+ CREATE SNAPSHOT NOW'}
+          </button>
+        </div>
+
+        {/* Wipe First Toggle */}
+        <div className="border-2 border-surface-variant bg-surface-container-low/40 p-4 space-y-2">
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="wipe-first-toggle"
+              checked={wipeFirst}
+              onChange={(e) => setWipeFirst(e.target.checked)}
+              className="h-4 w-4 rounded border-surface-variant text-danger-red focus:ring-danger-red"
+            />
+            <label htmlFor="wipe-first-toggle" className="font-mono text-xs font-bold text-on-surface cursor-pointer select-none">
+              [!] Clean Restore Mode: Wipe existing database tables before restoring snapshot
+            </label>
+          </div>
+          <p className="text-[11px] font-mono text-on-surface-variant pl-7">
+            {wipeFirst
+              ? '⚠ DANGER MODE ENABLED: Current pastes, files, and reports in DB will be TRUNCATED before inserting snapshot items.'
+              : '✓ SAFE MERGE MODE (Default): Restores missing items and overwrites modified ones while preserving new items created after the backup.'}
+          </p>
+        </div>
+
+        {successMsg && (
+          <div role="status" className="border-2 border-success-green bg-success-green/10 px-4 py-3">
+            <p className="text-sm font-mono text-success-green">✓ {successMsg}</p>
+          </div>
+        )}
+        {error && (
+          <div role="alert" className="border-2 border-danger-red bg-error-container/20 px-4 py-3">
+            <p className="text-sm font-mono text-error">⚠ ERROR: {error}</p>
+          </div>
+        )}
+
+        {loading ? (
+          <p className="py-8 text-center text-sm font-mono text-on-surface-variant">LOADING BACKUP SNAPSHOTS...</p>
+        ) : backups.length === 0 ? (
+          <div className="py-8 text-center border-2 border-dashed border-surface-variant p-6">
+            <p className="text-sm font-mono text-on-surface-variant">No backup snapshots found in server storage.</p>
+            <button
+              type="button"
+              onClick={handleCreateSnapshot}
+              disabled={creating}
+              className="mt-4 inline-flex min-h-[40px] items-center justify-center border-2 border-secondary text-secondary px-4 py-1.5 text-xs font-mono uppercase tracking-wider hover:bg-secondary hover:text-black"
+            >
+              CREATE FIRST SNAPSHOT
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left font-mono text-xs">
+              <thead>
+                <tr className="border-b-2 border-surface-variant text-on-surface-variant uppercase tracking-wider">
+                  <th className="py-3 px-3">SNAPSHOT FILENAME</th>
+                  <th className="py-3 px-3">FORMAT</th>
+                  <th className="py-3 px-3">SIZE</th>
+                  <th className="py-3 px-3">CREATED</th>
+                  <th className="py-3 px-3 text-right">ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-surface-variant">
+                {backups.map((b) => (
+                  <tr key={b.filename} className="hover:bg-surface-container-low/50 transition-colors">
+                    <td className="py-3 px-3 font-semibold text-secondary">{b.filename}</td>
+                    <td className="py-3 px-3">
+                      <span className="inline-block border border-outline px-1.5 py-0.5 text-[10px] uppercase font-bold text-outline">
+                        {b.format}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 text-on-surface-variant">{formatFileSize(b.size_bytes)}</td>
+                    <td className="py-3 px-3 text-on-surface-variant">{formatRelativeTime(b.created_at)}</td>
+                    <td className="py-3 px-3 text-right space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadFile(b.filename)}
+                        className="inline-flex min-h-[32px] items-center border border-secondary text-secondary px-2.5 py-1 text-[11px] uppercase tracking-wider hover:bg-secondary hover:text-black transition-colors"
+                      >
+                        [ DOWNLOAD ]
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRestoreSnapshot(b.filename)}
+                        disabled={restoringFilename === b.filename}
+                        className="inline-flex min-h-[32px] items-center border border-warning-orange text-warning-orange px-2.5 py-1 text-[11px] uppercase tracking-wider hover:bg-warning-orange hover:text-black transition-colors disabled:opacity-50"
+                      >
+                        {restoringFilename === b.filename ? 'RESTORING...' : '[ RESTORE ]'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="border-2 border-surface-variant bg-surface-container-lowest p-4 sm:p-6 space-y-3">
+        <h3 className="font-mono text-xs font-bold text-secondary uppercase tracking-wider">SAFE UPLOAD RESTORE (.JSON ONLY)</h3>
+        <p className="text-xs font-mono text-on-surface-variant">
+          Upload an external JSON backup file for strict schema validation & parameterized restoration.
+        </p>
+        <div className="flex items-center gap-3 pt-2">
+          <label className="inline-flex min-h-[40px] cursor-pointer items-center justify-center border-2 border-surface-variant text-on-surface px-4 py-1.5 text-xs font-mono uppercase tracking-wider hover:border-secondary hover:text-secondary">
+            <span>{uploading ? 'UPLOADING & VALIDATING...' : 'SELECT JSON FILE TO RESTORE'}</span>
+            <input
+              type="file"
+              accept=".json"
+              onChange={handleUploadRestore}
+              disabled={uploading}
+              className="hidden"
+            />
+          </label>
+        </div>
+      </div>
     </div>
   );
 }

@@ -9,7 +9,7 @@ import (
 	"net/url"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/gthbn/pastebin/internal/report"
+	"github.com/cymerz/darkcopy/internal/report"
 )
 
 // TurnstileVerifyURL is the Cloudflare Turnstile siteverify endpoint.
