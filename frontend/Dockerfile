@@ -1,5 +1,5 @@
 # ---- Stage 1: Builder ----
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Cache layer: install deps first (only changes when package.json changes)
@@ -15,7 +15,7 @@ ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 RUN npm run build
 
 # ---- Stage 2: Production runner (minimal footprint) ----
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 # tini: proper signal forwarding & zombie reaping in Node containers
