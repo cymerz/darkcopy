@@ -41,6 +41,25 @@ function buildUrl(path: string): string {
   return `${base}/api${path}`;
 }
 
+async function getServerForwardHeaders(): Promise<Record<string, string>> {
+  try {
+    const { headers: getNextHeaders } = await import('next/headers');
+    const reqHeaders = await getNextHeaders();
+    const out: Record<string, string> = {};
+    for (const h of ['x-forwarded-for', 'x-real-ip', 'cf-connecting-ip']) {
+      const v = reqHeaders.get(h);
+      if (v) out[h] = v;
+    }
+    return out;
+  } catch (e) {
+    // next/headers throws when called outside a request context (static build,
+    // tests). Any other error is unexpected but non-fatal for IP forwarding.
+    // ponytail: log unexpected errors when observability is added
+    void e;
+    return {};
+  }
+}
+
 /**
  * Internal helper for JSON-based API calls.
  *
@@ -55,12 +74,19 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers);
   headers.set('Accept', 'application/json');
 
+  const isServer = typeof window === 'undefined';
+  if (isServer) {
+    const fwd = await getServerForwardHeaders();
+    for (const [k, v] of Object.entries(fwd)) {
+      if (!headers.has(k)) headers.set(k, v);
+    }
+  }
+
   // Strip Next.js-extended fetch options (cache, next) when calling the
   // backend directly from the server — they only apply to Next.js's fetch
   // cache layer which wraps the /api proxy, not direct backend calls.
   // On the client these options are harmless (browser fetch ignores them).
   const { cache: _cache, next: _next, ...fetchOptions } = (options ?? {}) as RequestInit & { next?: unknown };
-  const isServer = typeof window === 'undefined';
 
   const res = await fetch(url, {
     ...(isServer ? fetchOptions : options),
@@ -227,9 +253,10 @@ export async function registerUploadedFile(data: RegisterUploadedFilePayload): P
  */
 export async function getFile(slug: string): Promise<Response> {
   const isServer = typeof window === 'undefined';
+  const fwd = isServer ? await getServerForwardHeaders() : {};
   return fetch(buildUrl(`/f/${slug}`), {
     method: isServer ? 'HEAD' : 'GET',
-    headers: { Accept: 'application/json' },
+    headers: { Accept: 'application/json', ...fwd },
     ...(isServer ? {} : { cache: 'no-store' as RequestCache }),
   });
 }

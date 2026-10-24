@@ -202,4 +202,30 @@ describe('apiFetch - Property 4: API Error Propagation', () => {
       },
     );
   });
+
+  it('forwards client IP headers from next/headers in server environment', async () => {
+    // jest.resetModules() already ran in beforeEach — register the mock
+    // *before* the dynamic require so the module resolver picks it up.
+    jest.doMock('next/headers', () => ({
+      headers: async () => ({
+        get: (name: string) => (name.toLowerCase() === 'x-forwarded-for' ? '203.0.113.195' : null),
+      }),
+    }));
+
+    // Re-require api.ts so the dynamic import('next/headers') resolves to the mock.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getPaste: getPasteFresh } = require('./api');
+
+    global.fetch = jest.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ slug: 'test', content: 'test', language: 'plaintext', visibility: 'public', views: 0, is_encrypted: false, burn_after_read: false }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await getPasteFresh('test');
+
+    const callHeaders = (global.fetch as jest.Mock).mock.calls[0][1].headers as Headers;
+    expect(callHeaders.get('x-forwarded-for')).toBe('203.0.113.195');
+  });
 });
