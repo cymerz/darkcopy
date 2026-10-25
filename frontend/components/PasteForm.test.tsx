@@ -13,6 +13,7 @@ import { APIError } from '@/lib/types';
 const pushMock = jest.fn();
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 const createPasteMock = jest.fn();
